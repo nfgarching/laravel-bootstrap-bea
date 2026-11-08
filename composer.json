@@ -1,0 +1,55 @@
+{
+    "name": "nfgarching/bea",
+    "description": "Import heruntergeladener beA-Nachrichten (ZIP) mit XJustiz, VHN-Prüfung und Event zur Aktenzuordnung.",
+    "keywords": [
+        "laravel",
+        "bea",
+        "xjustiz",
+        "egvp",
+        "anwaltspostfach"
+    ],
+    "homepage": "https://github.com/nfgarching/laravel-bootstrap-bea",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Norbert Fröhler",
+            "email": "norbert.froehler@gmail.com",
+            "role": "Owner"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "ext-dom": "*",
+        "ext-zip": "*",
+        "illuminate/support": "^13.0",
+        "livewire/livewire": "^4.0",
+        "nfgarching/core": "dev-main",
+        "nfgarching/files": "dev-main"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0",
+        "phpunit/phpunit": "^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Nfgarching\\Bea\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Nfgarching\\Bea\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Nfgarching\\Bea\\BeaServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

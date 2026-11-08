@@ -1,0 +1,56 @@
+<tns:nachricht.gds.uebermittlungSchriftgutobjekte.0005005 xmlns:tns="http://www.xjustiz.de">
+   <tns:nachrichtenkopf xjustizVersion="3.6.2">
+      <tns:erstellungszeitpunkt>2026-11-02T09:15:00</tns:erstellungszeitpunkt>
+      <tns:absender>
+         <tns:informationen><tns:auswahl_kommunikationspartner><tns:sonstige>DE.Justiz.00000000-0000-0000-0000-000000000001.0001</tns:sonstige></tns:auswahl_kommunikationspartner></tns:informationen>
+         <tns:aktenzeichen>1 C 123/26</tns:aktenzeichen>
+         <tns:eigeneNachrichtenID>11111111-2222-3333-4444-555555555555</tns:eigeneNachrichtenID>
+      </tns:absender>
+      <tns:empfaenger>
+         <tns:informationen><tns:auswahl_kommunikationspartner><tns:sonstige>DE.BRAK.00000000-0000-0000-0000-000000000002.0002</tns:sonstige></tns:auswahl_kommunikationspartner></tns:informationen>
+         <tns:auswahl_aktenzeichen><tns:aktenzeichen.freitext>26/0001</tns:aktenzeichen.freitext></tns:auswahl_aktenzeichen>
+      </tns:empfaenger>
+      <tns:ruecksendungEEB.erforderlich>true</tns:ruecksendungEEB.erforderlich>
+      <tns:herstellerinformation><tns:nameDesProdukts>Testprodukt</tns:nameDesProdukts><tns:herstellerDesProdukts>Test</tns:herstellerDesProdukts><tns:version>1.0</tns:version></tns:herstellerinformation>
+   </tns:nachrichtenkopf>
+   <tns:grunddaten>
+      <tns:verfahrensdaten>
+         <tns:instanzdaten>
+            <tns:instanznummer>1</tns:instanznummer>
+            <tns:sachgebiet><code>010</code></tns:sachgebiet>
+            <tns:auswahl_instanzbehoerde><tns:gericht><code>X0000</code></tns:gericht></tns:auswahl_instanzbehoerde>
+            <tns:aktenzeichen><tns:aktenzeichen.freitext>1 C 123/26</tns:aktenzeichen.freitext></tns:aktenzeichen>
+            <tns:verfahrensgegenstand><tns:gegenstand>Forderung</tns:gegenstand></tns:verfahrensgegenstand>
+         </tns:instanzdaten>
+         <tns:beteiligung>
+            <tns:beteiligtennummer>1</tns:beteiligtennummer>
+            <tns:rolle><tns:rollenbezeichnung><code>027</code></tns:rollenbezeichnung></tns:rolle>
+            <tns:beteiligter><tns:auswahl_beteiligter><tns:natuerlichePerson><tns:vollerName><tns:vorname>Erika</tns:vorname><tns:nachname>Musterfrau</tns:nachname></tns:vollerName></tns:natuerlichePerson></tns:auswahl_beteiligter></tns:beteiligter>
+         </tns:beteiligung>
+         <tns:beteiligung>
+            <tns:beteiligtennummer>2</tns:beteiligtennummer>
+            <tns:rolle><tns:rollenbezeichnung><code>028</code></tns:rollenbezeichnung></tns:rolle>
+            <tns:beteiligter><tns:auswahl_beteiligter><tns:organisation><tns:bezeichnung><tns:bezeichnung.aktuell>Beispiel GmbH</tns:bezeichnung.aktuell></tns:bezeichnung></tns:organisation></tns:auswahl_beteiligter></tns:beteiligter>
+         </tns:beteiligung>
+      </tns:verfahrensdaten>
+   </tns:grunddaten>
+   <tns:schriftgutobjekte>
+      <tns:dokument>
+         <tns:identifikation><tns:id>doc-1</tns:id><tns:nummerImUebergeordnetenContainer>1</tns:nummerImUebergeordnetenContainer></tns:identifikation>
+         <tns:xjustiz.fachspezifischeDaten>
+            <tns:dokumentklasse><code>017</code></tns:dokumentklasse>
+            <tns:anzeigename>Ladung zum Termin</tns:anzeigename>
+            <tns:datei><tns:dateiname>Ladung.pdf</tns:dateiname><tns:bestandteil><code>001</code></tns:bestandteil></tns:datei>
+            <tns:datei><tns:dateiname>Ladung.pdf.p7s</tns:dateiname><tns:bestandteil><code>003</code></tns:bestandteil></tns:datei>
+         </tns:xjustiz.fachspezifischeDaten>
+      </tns:dokument>
+      <tns:dokument>
+         <tns:identifikation><tns:id>doc-2</tns:id><tns:nummerImUebergeordnetenContainer>2</tns:nummerImUebergeordnetenContainer></tns:identifikation>
+         <tns:xjustiz.fachspezifischeDaten>
+            <tns:dokumentklasse><code>015</code></tns:dokumentklasse>
+            <tns:anzeigename>Klageerwiderung der Gegenseite</tns:anzeigename>
+            <tns:datei><tns:dateiname>Klageerwiderung.pdf</tns:dateiname><tns:bestandteil><code>001</code></tns:bestandteil></tns:datei>
+         </tns:xjustiz.fachspezifischeDaten>
+      </tns:dokument>
+   </tns:schriftgutobjekte>
+</tns:nachricht.gds.uebermittlungSchriftgutobjekte.0005005>

@@ -1,0 +1,11 @@
+/vendor/
+composer.lock
+.phpunit.result.cache
+.phpunit.cache/
+.env
+.env.*
+.idea/
+.vscode/
+.DS_Store
+# Echte beA-Nachrichten niemals einchecken
+*.zip

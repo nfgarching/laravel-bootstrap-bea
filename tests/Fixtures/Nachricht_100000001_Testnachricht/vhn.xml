@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<VHN Version="2.0">
+    <Fachlich>
+        <Absender>
+            <Nutzer_ID>DE.Justiz.00000000-0000-0000-0000-000000000001.0001</Nutzer_ID>
+            <Name>Amtsgericht Musterstadt</Name>
+            <Strasse>Gerichtsweg</Strasse>
+            <Hausnummer>1</Hausnummer>
+            <Postleitzahl>12345</Postleitzahl>
+            <Ort>Musterstadt</Ort>
+            <Land>DE</Land>
+        </Absender>
+        <EGVP_Rollenwerte>egvp_justiz</EGVP_Rollenwerte>
+        <Sicherer_Uebermittlungsweg>ja</Sicherer_Uebermittlungsweg>
+        <Dokument Algorithm="SHA256"><Hashwert>GgFFWglR3RLPSa6FvWgy0q1+kKUkrhCO3hbZKNEmyRs=</Hashwert></Dokument>
+        <Dokument Algorithm="SHA256"><Hashwert>mxNbp8/s3x4O6m4D3y18q1Dk1gtkIehsLFGy4xJS95A=</Hashwert></Dokument>
+        <Dokument Algorithm="SHA256"><Hashwert>Umh2Em9hm48TzKxbCk7ggvHw2G/GpONhXVjALk2ub+Y=</Hashwert></Dokument>
+    </Fachlich>
+    <Technisch>
+        <HerstellerInformation><Name_des_Produkts_und_Softwareversion>Testprodukt 1.0</Name_des_Produkts_und_Softwareversion></HerstellerInformation>
+    </Technisch>
+</VHN>
