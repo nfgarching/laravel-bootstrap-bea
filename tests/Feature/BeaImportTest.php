@@ -48,7 +48,7 @@ test('importiert eine beA-Nachricht und löst das Event mit Aktenzeichen und Dat
     expect($ladung)->not->toBeNull()
         ->and($ladung->model_type)->toBe(BeaMessage::class)
         ->and($ladung->collection_name)->toBe('bea')
-        ->and($ladung->isOwn())->toBeFalse();
+        ->and($ladung->isOriginalDocument())->toBeTrue();
     Storage::disk('local')->assertExists($ladung->file);
 
     Event::assertDispatched(BeaMessageImported::class, function (BeaMessageImported $event) use ($message) {
@@ -77,6 +77,9 @@ test('eine bereits importierte Nachricht wird übersprungen', function () {
 });
 
 test('der Listener kann die Nachricht einer Akte zuordnen', function () {
+    // Listener der Anwendung (RecieveNewBeaMessage) entfernen: er schriebe
+    // über die akv-Verbindung in die echte Legacy-Datenbank
+    Event::forget(BeaMessageImported::class);
     Event::listen(BeaMessageImported::class, function (BeaMessageImported $event) {
         $event->message->assignTo(User::first());
     });

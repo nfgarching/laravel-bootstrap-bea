@@ -7,8 +7,12 @@
                 <div class="flex-grow-1">
                     <input type="file" class="form-control" wire:model="zips" multiple accept=".zip,application/zip">
                     <div class="form-text">ZIP-Dateien, wie sie aus dem beA heruntergeladen werden. Bereits importierte Nachrichten werden übersprungen.</div>
+                    {{-- „zips“: Upload gescheitert (z.B. PHP upload_max_filesize/post_max_size überschritten), „zips.*“: Validierung je Datei --}}
+                    @error('zips')
+                        <div class="text-danger small">{{ $message }}</div>
+                    @enderror
                     @error('zips.*')
-                        <span class="text-danger small">{{ $message }}</span>
+                        <div class="text-danger small">{{ $message }}</div>
                     @enderror
                 </div>
                 <button type="submit" class="btn btn-primary text-nowrap" wire:loading.attr="disabled" @disabled(empty($zips))>

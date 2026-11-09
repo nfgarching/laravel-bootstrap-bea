@@ -177,12 +177,12 @@ class BeaImporter
 
     /**
      * Legt eine Datei aus dem Arbeitsverzeichnis über das Files-Package ab.
-     * Empfangene Dateien sind nie „eigene Dokumente“ (Original bleibt erhalten).
+     * Empfangene Dateien sind immer „Original Dokumente“ (Original bleibt erhalten).
      */
     private function importFile(string $relativePath, ?BeaMessage $message, ?string $displayName = null): ?File
     {
         $input = [
-            'own' => false,
+            'original' => true,
             'collection_name' => config('bea.collection', 'bea'),
         ];
         if ($message) {
