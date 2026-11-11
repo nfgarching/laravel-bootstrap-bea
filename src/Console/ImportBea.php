@@ -3,22 +3,24 @@
 namespace Nfgarching\Bea\Console;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Storage;
 use Nfgarching\Bea\Services\BeaImporter;
+use Nfgarching\Bea\Services\BeaStorage;
 
 /**
- * Importiert beA-Exporte (ZIP) aus dem Eingangsordner oder aus angegebenen Dateien.
+ * Liest beA-Exporte (ZIP) aus dem Eingang der Disk „beas“ oder aus
+ * angegebenen Dateien ein. Es wird nur eingelesen: Welche Dateien ins
+ * Files-Package übernommen werden, entscheidet man von Hand im Browser.
  */
 class ImportBea extends Command
 {
     protected $signature = 'bea:import
-                            {paths?* : ZIP-Dateien im lokalen Dateisystem; ohne Angabe der Eingangsordner (bea.inbox)}
-                            {--force : Bereits importierte Nachrichten erneut importieren}
-                            {--keep : ZIPs im Eingangsordner nicht löschen}';
+                            {paths?* : ZIP-Dateien im lokalen Dateisystem; ohne Angabe der Eingang der Disk (bea.inbox)}
+                            {--force : Bereits eingelesene Nachrichten erneut einlesen}
+                            {--keep : ZIPs im Eingang nicht löschen}';
 
-    protected $description = 'Importiert heruntergeladene beA-Nachrichten (ZIP)';
+    protected $description = 'Liest heruntergeladene beA-Nachrichten (ZIP) ein – ohne Übernahme der Dateien';
 
-    public function handle(BeaImporter $importer): int
+    public function handle(BeaImporter $importer, BeaStorage $storage): int
     {
         $failed = 0;
         $paths = $this->argument('paths');
@@ -31,51 +33,49 @@ class ImportBea extends Command
 
                     continue;
                 }
-                $failed += $this->importOne($importer, $path, basename($path)) ? 0 : 1;
+                $failed += $this->ingestOne($importer, $path, basename($path), 'console') ? 0 : 1;
             }
 
             return $failed ? self::FAILURE : self::SUCCESS;
         }
 
-        $disk = Storage::disk(config('bea.inbox.disk', 'local'));
-        $dir = trim((string) config('bea.inbox.path', 'bea-inbox'), '/');
-        $zips = array_filter($disk->files($dir), fn ($f) => str_ends_with(strtolower($f), '.zip'));
-
+        $zips = $storage->inboxFiles();
         if ($zips === []) {
-            $this->info('Keine ZIP-Dateien im Eingangsordner.');
+            $this->info('Keine ZIP-Dateien im Eingang.');
 
             return self::SUCCESS;
         }
 
         foreach ($zips as $zip) {
-            $local = tempnam(sys_get_temp_dir(), 'bea');
+            $local = null;
             try {
-                $stream = $disk->readStream($zip);
-                file_put_contents($local, $stream);
-                if (is_resource($stream)) {
-                    fclose($stream);
-                }
-
-                if ($this->importOne($importer, $local, basename($zip))) {
-                    if (config('bea.inbox.delete_after_import', true) && ! $this->option('keep')) {
-                        $disk->delete($zip);
+                $local = $storage->localCopy($storage->diskName(), $zip);
+                if ($this->ingestOne($importer, $local, basename($zip), 'inbox')) {
+                    // Das Original liegt jetzt unter archive/ – der Eingang wird geleert
+                    if (! $this->option('keep')) {
+                        $storage->disk()->delete($zip);
                     }
                 } else {
                     $failed++;
-                    $disk->move($zip, $dir.'/failed/'.basename($zip));
+                    $storage->moveToFailed($zip);
                 }
+            } catch (\Throwable $e) {
+                $failed++;
+                $this->error(basename($zip).': '.$e->getMessage());
             } finally {
-                @unlink($local);
+                if ($local) {
+                    @unlink($local);
+                }
             }
         }
 
         return $failed ? self::FAILURE : self::SUCCESS;
     }
 
-    private function importOne(BeaImporter $importer, string $path, string $name): bool
+    private function ingestOne(BeaImporter $importer, string $path, string $name, string $source): bool
     {
         try {
-            $result = $importer->import($path, $name, (bool) $this->option('force'));
+            $result = $importer->ingest($path, $name, $source, (bool) $this->option('force'));
         } catch (\Throwable $e) {
             $this->error("{$name}: ".$e->getMessage());
 
@@ -83,18 +83,20 @@ class ImportBea extends Command
         }
 
         foreach ($result['imported'] as $message) {
+            $attachments = $message->messageFiles->where('role', 'attachment');
             $this->line(sprintf(
-                '<info>✓</info> %s  beA %s  AZ %s  %s  (%d Anhänge, VHN %s)',
+                '<info>✓</info> %s  beA %s  AZ %s  %s  (%d Datei(en), %d vorgeschlagen, VHN %s)',
                 $name,
                 $message->bea_id ?? '–',
                 $message->aktenzeichen ?? '–',
                 $message->sender_name ?? '',
-                $message->messageFiles->whereIn('role', ['attachment', 'signature'])->count(),
+                $attachments->count(),
+                $attachments->where('suggested', true)->count(),
                 $message->vhn_signature,
             ));
         }
         foreach ($result['skipped'] as $key) {
-            $this->line("<comment>–</comment> {$name}  beA {$key} bereits importiert");
+            $this->line("<comment>–</comment> {$name}  beA {$key} bereits eingelesen");
         }
         foreach (array_unique($result['warnings']) as $warning) {
             $this->warn("  {$warning}");

@@ -9,15 +9,16 @@ use Nfgarching\Bea\Models\BeaMessage;
 use Nfgarching\Files\Models\File;
 
 /**
- * Wird je neu importierter beA-Nachricht ausgelöst.
- *
- * Der Listener im eigenen Projekt ordnet die Nachricht anhand des
- * Aktenzeichens zu, z. B.:
+ * Wird je neu eingelesener beA-Nachricht ausgelöst – noch bevor Dateien
+ * übernommen sind. Der Listener im eigenen Projekt kann die Nachricht anhand
+ * des Aktenzeichens vorab zuordnen; die Zuordnung erscheint dann bei der
+ * Übernahme als Vorschlag:
  *
  *     $akte = Akte::where('aktenzeichen', $event->aktenzeichen)->first();
- *     $event->message->assignTo($akte);
- *     $event->attachments()->each->update(['model_type' => $akte::class, 'model_id' => $akte->id]);
+ *     $akte && $event->message->assignTo($akte);
  *
+ * Dateien gibt es zu diesem Zeitpunkt nicht: sie entstehen erst bei der
+ * Übernahme (Events NewFiles des Files-Packages und BeaFilesAccepted).
  * $data enthält alles, was ausgelesen wurde (siehe docs/Datenformat.md).
  */
 class BeaMessageImported
@@ -28,23 +29,29 @@ class BeaMessageImported
      * @param  string|null  $aktenzeichen  Aktenzeichen des Empfängers (eigenes Aktenzeichen)
      * @param  string|null  $aktenzeichenAbsender  Aktenzeichen des Absenders (Gericht, Behörde, Kollege)
      * @param  array<string, mixed>  $data  vollständige Nachrichtendaten
-     * @param  list<int>  $fileIds  File-IDs der Anhänge (inkl. Signaturdateien)
-     * @param  array<string, int|null>  $metaFileIds  report, export, zip
      */
     public function __construct(
         public BeaMessage $message,
         public ?string $aktenzeichen,
         public ?string $aktenzeichenAbsender,
         public array $data,
-        public array $fileIds,
-        public array $metaFileIds = [],
     ) {}
 
     /**
+     * @deprecated Beim Einlesen entstehen keine Dateien mehr – immer leer.
+     *             Übernommene Dateien liefern NewFiles und BeaFilesAccepted.
+     *
+     * @var list<int>
+     */
+    public array $fileIds = [];
+
+    /**
+     * @deprecated siehe $fileIds – immer leer.
+     *
      * @return Collection<int, File>
      */
     public function attachments(): Collection
     {
-        return File::query()->whereKey($this->fileIds)->orderBy('id')->get();
+        return new Collection;
     }
 }

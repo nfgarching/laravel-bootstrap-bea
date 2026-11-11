@@ -1,8 +1,12 @@
 # Datenformat von `BeaMessageImported::$data`
 
-`$event->data` (und `BeaMessage::$data`) enthält alles, was aus der Nachricht
-ausgelesen wurde. Beispiel aus der synthetischen Testnachricht
-(`tests/Fixtures`, frei erfundene Daten):
+`$event->data` (und `BeaMessage::$data`) enthält alles, was beim Einlesen aus
+der Nachricht ausgelesen wurde. Dateien im Files-Package gibt es zu diesem
+Zeitpunkt noch nicht – sie entstehen erst bei der Übernahme; welche Datei
+übernommen wurde, steht in `bea_message_files` (`file_id`, `accepted_at`).
+
+Beispiel aus der synthetischen Testnachricht (`tests/Fixtures`, frei
+erfundene Daten):
 
 ```json
 {

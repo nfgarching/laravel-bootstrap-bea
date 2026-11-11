@@ -1,6 +1,6 @@
 {
     "name": "nfgarching/bea",
-    "description": "Import heruntergeladener beA-Nachrichten (ZIP) mit XJustiz, VHN-Prüfung und Event zur Aktenzuordnung.",
+    "description": "Import heruntergeladener beA-Nachrichten (ZIP): XJustiz, VHN-Prüfung mit Prüfhistorie, Übernahme mit Vorschlägen und Zuordnung zu Akten und Namen.",
     "keywords": [
         "laravel",
         "bea",

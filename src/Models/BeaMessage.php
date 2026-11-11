@@ -2,20 +2,27 @@
 
 namespace Nfgarching\Bea\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\MorphMany;
-use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Nfgarching\Files\Models\File;
 
 /**
- * Importierte beA-Nachricht. Die vollständigen ausgelesenen Daten stehen in
+ * Eingelesene beA-Nachricht. Die vollständigen ausgelesenen Daten stehen in
  * data (siehe BeaMessageData::toArray()).
+ *
+ * status: ingested (eingelesen, noch nichts übernommen) | accepted (Auswahl
+ * getroffen, Dateien an das Files-Package übergeben)
  */
 class BeaMessage extends Model
 {
+    public const string STATUS_INGESTED = 'ingested';
+
+    public const string STATUS_ACCEPTED = 'accepted';
+
     protected $guarded = ['id', 'created_at', 'updated_at'];
 
     protected function casts(): array
@@ -24,10 +31,17 @@ class BeaMessage extends Model
             'sent_at' => 'datetime',
             'received_at' => 'datetime',
             'intermediary_at' => 'datetime',
+            'accepted_at' => 'datetime',
             'secure_channel' => 'boolean',
             'eeb_requested' => 'boolean',
             'data' => 'array',
         ];
+    }
+
+    /** @return BelongsTo<BeaArchive, $this> */
+    public function archive(): BelongsTo
+    {
+        return $this->belongsTo(BeaArchive::class, 'bea_archive_id');
     }
 
     /** @return HasMany<BeaMessageFile, $this> */
@@ -36,55 +50,121 @@ class BeaMessage extends Model
         return $this->hasMany(BeaMessageFile::class);
     }
 
-    /** @return BelongsTo<File, $this> */
-    public function zipFile(): BelongsTo
+    /** @return HasMany<BeaAssignment, $this> */
+    public function assignments(): HasMany
     {
-        return $this->belongsTo(File::class, 'zip_file_id');
+        return $this->hasMany(BeaAssignment::class)->orderBy('id');
+    }
+
+    /** @return HasMany<BeaVerification, $this> */
+    public function verifications(): HasMany
+    {
+        return $this->hasMany(BeaVerification::class)->orderByDesc('id');
+    }
+
+    /** @return HasOne<BeaVerification, $this> */
+    public function latestVerification(): HasOne
+    {
+        return $this->hasOne(BeaVerification::class)->latestOfMany();
     }
 
     /**
-     * Alle File-Datensätze dieser Nachricht (Anhänge, Prüfprotokoll, Export).
-     *
-     * @return MorphMany<File, $this>
-     */
-    public function files(): MorphMany
-    {
-        return $this->morphMany(File::class, 'model');
-    }
-
-    /**
-     * Die eigentlichen Anhänge (ohne Prüfprotokoll und Exportansicht).
+     * Übernommene Dateien im Files-Package.
      *
      * @return Collection<int, File>
      */
-    public function attachments(): Collection
+    public function acceptedFiles(): Collection
     {
-        $ids = $this->messageFiles->whereIn('role', ['attachment', 'signature'])->pluck('file_id')->filter();
+        $ids = $this->messageFiles->pluck('file_id')->filter();
 
-        return File::query()->whereKey($ids)->get();
-    }
-
-    /** @return MorphTo<Model, $this> */
-    public function assignable(): MorphTo
-    {
-        return $this->morphTo();
+        return File::query()->whereKey($ids)->orderBy('id')->get();
     }
 
     /**
-     * Zuordnung durch den eigenen Listener festhalten, z. B. zur Akte.
+     * Zuordnung festhalten, z. B. zur Akte – im eigenen Listener auf
+     * BeaMessageImported oder bei der Übernahme. Die erste Zuordnung ist die
+     * Hauptzuordnung.
      */
-    public function assignTo(Model $model): void
+    public function assignTo(Model $model): BeaAssignment
     {
-        $this->assignable()->associate($model)->save();
+        return $this->assignments()->firstOrCreate(
+            ['assignable_type' => $model->getMorphClass(), 'assignable_id' => $model->getKey()],
+            ['assigned_by' => auth()->id()],
+        );
+    }
+
+    public function unassign(Model $model): void
+    {
+        $this->assignments()
+            ->where('assignable_type', $model->getMorphClass())
+            ->where('assignable_id', $model->getKey())
+            ->delete();
+    }
+
+    public function primaryAssignment(): ?BeaAssignment
+    {
+        return $this->assignments->first();
     }
 
     public function isAssigned(): bool
     {
-        return $this->assignable_type !== null;
+        return $this->assignments->isNotEmpty();
+    }
+
+    public function isAccepted(): bool
+    {
+        return $this->status === self::STATUS_ACCEPTED;
     }
 
     public function isVhnTrusted(): bool
     {
         return $this->vhn_signature === 'valid';
+    }
+
+    /**
+     * Nachrichten, die einem der Besitzer zugeordnet sind – direkt oder über
+     * eine übernommene Datei, die dem Besitzer gehört (z. B. ein Dokument).
+     *
+     * @param  Builder<BeaMessage>  $query
+     * @param  list<array{0: string, 1: int|string}>  $owners  [model_type, model_id]-Paare
+     */
+    public function scopeForOwners(Builder $query, array $owners): void
+    {
+        if ($owners === []) {
+            return;
+        }
+
+        $match = function (Builder $q, string $typeColumn, string $idColumn) use ($owners) {
+            $q->where(function (Builder $w) use ($owners, $typeColumn, $idColumn) {
+                foreach ($owners as [$type, $id]) {
+                    $w->orWhere(fn (Builder $o) => $o->where($typeColumn, $type)->where($idColumn, $id));
+                }
+            });
+        };
+
+        $query->where(function (Builder $q) use ($match) {
+            $q->whereHas('assignments', fn (Builder $a) => $match($a, 'assignable_type', 'assignable_id'))
+                ->orWhereHas('messageFiles.file', fn (Builder $f) => $match($f, 'model_type', 'model_id'));
+        });
+    }
+
+    /**
+     * Suche in Aktenzeichen, Absender, Betreff und beA-ID.
+     *
+     * @param  Builder<BeaMessage>  $query
+     */
+    public function scopeSearch(Builder $query, ?string $term): void
+    {
+        $term = trim((string) $term);
+        if ($term === '') {
+            return;
+        }
+        $like = '%'.$term.'%';
+
+        $query->where(fn (Builder $w) => $w->where('aktenzeichen', 'like', $like)
+            ->orWhere('aktenzeichen_absender', 'like', $like)
+            ->orWhere('sender_name', 'like', $like)
+            ->orWhere('subject', 'like', $like)
+            ->orWhere('bea_id', 'like', $like));
     }
 }
