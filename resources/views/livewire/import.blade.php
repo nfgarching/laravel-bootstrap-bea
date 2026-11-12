@@ -43,7 +43,9 @@
         </div>
         <div class="card-footer small text-muted">
             Es wird nur eingelesen: Die ZIP wandert unverändert ins Archiv der Disk, die Dateien werden erfasst und geprüft.
-            Welche Dateien übernommen werden, entscheiden Sie im nächsten Schritt.
+            @unless ($modal)
+                Welche Dateien übernommen werden, entscheiden Sie im nächsten Schritt.
+            @endunless
         </div>
     </div>
 

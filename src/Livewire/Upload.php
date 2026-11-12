@@ -18,10 +18,11 @@ class Upload extends Component
     /** @var array<int, TemporaryUploadedFile> */
     public array $zips = [];
 
-    public function mount(?string $modelType = null, ?int $modelId = null): void
+    public function mount(?string $modelType = null, ?int $modelId = null, bool $modal = false): void
     {
         $this->modelType = $modelType;
         $this->modelId = $modelId;
+        $this->modal = $modal;
     }
 
     public function rules(): array

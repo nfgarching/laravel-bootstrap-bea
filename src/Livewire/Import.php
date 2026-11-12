@@ -25,10 +25,11 @@ class Import extends Component
     /** @var list<string> */
     public array $selectedFiles = [];
 
-    public function mount(?string $modelType = null, ?int $modelId = null): void
+    public function mount(?string $modelType = null, ?int $modelId = null, bool $modal = false): void
     {
         $this->modelType = $modelType;
         $this->modelId = $modelId;
+        $this->modal = $modal;
     }
 
     /**

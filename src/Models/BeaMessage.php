@@ -25,6 +25,13 @@ class BeaMessage extends Model
 
     protected $guarded = ['id', 'created_at', 'updated_at'];
 
+    /**
+     * Sortierbare Spalten der Liste (MainControllerTrait::getSortParameters()).
+     *
+     * @var list<string>
+     */
+    public $sortable = ['id', 'received_at', 'sender_name', 'subject', 'aktenzeichen', 'aktenzeichen_absender', 'status'];
+
     protected function casts(): array
     {
         return [

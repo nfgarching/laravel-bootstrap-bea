@@ -8,6 +8,8 @@ Route::middleware(config('bea.routes.middleware', ['web', 'auth']))
     ->name('bea.')
     ->group(function () {
         Route::get('/', [BeaController::class, 'index'])->name('index');
+        // Liste als Popup (ohne Navigation), z. B. aus einem Dokument heraus
+        Route::get('/popup', [BeaController::class, 'popup'])->name('popup');
 
         // Einlesen: aus dem Eingang der Disk „beas“ oder per Upload
         Route::get('/import', [BeaController::class, 'import'])->name('import');

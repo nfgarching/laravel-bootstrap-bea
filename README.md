@@ -88,6 +88,11 @@ keine URL und keinen öffentlichen Link.
 
 ## Einlesen
 
+- **Modal in der Liste:** `/bea` – die Knöpfe „Eingang“ und „Hochladen“
+  öffnen ein Modal mit beiden Wegen (`<livewire:bea.import :modal="true" />`,
+  `<livewire:bea.upload :modal="true" />`). Es wird nur eingelesen, das
+  Ergebnis bietet kein „Übernehmen“ an; beim Schließen lädt die Liste neu,
+  wenn etwas eingelesen wurde (Browser-Event `bea-ingested`).
 - **Eingang im Browser:** `/bea/import` – ZIPs aus `beas/inbox` auflisten,
   markieren, einlesen oder löschen.
 - **Upload:** `/bea/upload`.

@@ -10,6 +10,8 @@
         $date = fn ($value) => $value?->timezone($tz)->format('d.m.Y H:i') ?? '–';
         $tabs = ['nachricht' => 'Nachricht', 'dateien' => 'Dateien', 'pruefung' => 'Prüfung', 'journal' => 'Journal'];
         $tab = array_key_exists($tab, $tabs) ? $tab : 'nachricht';
+        // Listenfilter/Sortierung, damit Tabs, Prüfen und Blättern in derselben Liste bleiben
+        $listParams = $request->except(['message', 'tab', 'page']);
     @endphp
 
     @if (session('message'))
@@ -18,6 +20,9 @@
 
     <div class="card mb-3">
         <div class="card-body d-flex flex-wrap gap-2 align-items-center">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ route('bea.index', $listParams) }}" title="Zurück zur Liste">
+                <i class="bi bi-arrow-left-circle"></i>
+            </a>
             <div class="me-auto">
                 <div class="fw-semibold">
                     {{ $message->subject ?: '(ohne Betreff)' }}
@@ -32,13 +37,14 @@
             <a class="btn btn-sm btn-primary" href="{{ route('bea.select', $message) }}">
                 <i class="bi bi-check2-square"></i> {{ $message->isAccepted() ? 'Auswahl/Zuordnung' : 'Übernehmen' }}
             </a>
+            <x-nav.buttons class="btn-group-sm" routeName="bea.show" paramName="message" :$navigation :$request />
         </div>
     </div>
 
     <ul class="nav nav-tabs mb-3">
         @foreach ($tabs as $key => $label)
             <li class="nav-item">
-                <a @class(['nav-link', 'active' => $tab === $key]) href="{{ route('bea.show', ['message' => $message, 'tab' => $key]) }}">{{ $label }}</a>
+                <a @class(['nav-link', 'active' => $tab === $key]) href="{{ route('bea.show', ['message' => $message, ...$listParams, 'tab' => $key]) }}">{{ $label }}</a>
             </li>
         @endforeach
     </ul>
@@ -208,7 +214,7 @@
                 <div class="card h-100">
                     <div class="card-header d-flex align-items-center">
                         <span>Aktueller Stand</span>
-                        <form method="POST" action="{{ route('bea.verify', $message) }}" class="ms-auto">
+                        <form method="POST" action="{{ route('bea.verify', ['message' => $message, ...$listParams]) }}" class="ms-auto">
                             @csrf
                             <button class="btn btn-sm btn-outline-primary" type="submit"><i class="bi bi-arrow-repeat"></i> Erneut prüfen</button>
                         </form>

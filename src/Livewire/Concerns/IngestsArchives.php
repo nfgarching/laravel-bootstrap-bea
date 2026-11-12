@@ -19,6 +19,14 @@ trait IngestsArchives
     #[Locked]
     public ?int $modelId = null;
 
+    /**
+     * Im Modal der Liste: ohne Knopf „Übernehmen“ in den Ergebnissen; nach dem
+     * Einlesen meldet das Browser-Event „bea-ingested“, dass die Liste beim
+     * Schließen neu zu laden ist.
+     */
+    #[Locked]
+    public bool $modal = false;
+
     /** @var list<array{type: string, text: string, message_id: ?int}> */
     public array $results = [];
 
@@ -50,6 +58,10 @@ trait IngestsArchives
         }
         foreach (array_unique($result['warnings']) as $warning) {
             $this->results[] = ['type' => 'warning', 'text' => "{$name}: {$warning}", 'message_id' => null];
+        }
+
+        if ($result['imported'] !== []) {
+            $this->dispatch('bea-ingested', count: count($result['imported']));
         }
 
         return true;

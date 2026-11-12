@@ -15,6 +15,7 @@ use Nfgarching\Bea\Livewire\Select;
 use Nfgarching\Bea\Livewire\Upload;
 use Nfgarching\Bea\Models\BeaMessage;
 use Nfgarching\Bea\Services\BeaImporter;
+use Nfgarching\Bea\Services\BeaStorage;
 use Nfgarching\Files\Events\NewFiles;
 use Nfgarching\Files\Jobs\ProcessFile;
 use Nfgarching\Files\Models\File;
@@ -60,6 +61,46 @@ test('ZIPs über 12 MB werden nicht schon vom Livewire-Upload abgewiesen', funct
     Livewire::test(Upload::class)
         ->set('zips', [$zip])
         ->assertHasNoErrors('zips.0');
+});
+
+test('die Liste öffnet als Popup ohne Navigation und behält den Aufrufkontext', function () {
+    $context = ['model_type' => User::class, 'model_id' => $this->user->id];
+
+    $this->get(route('bea.popup', $context))->assertOk()
+        ->assertSee('beA-Nachrichten')
+        ->assertSee('id="beaImportModal"', false)
+        ->assertSee('name="model_type"', false)
+        ->assertSee(e(route('bea.popup', ['model_type' => User::class, 'model_id' => $this->user->id])), false)
+        ->assertDontSee('id="sidebarMenu"', false);
+
+    $this->get(route('bea.index'))->assertOk()->assertDontSee(route('bea.popup'));
+});
+
+test('die Liste liest über das Modal ein – ohne Schritt „Übernehmen“', function () {
+    $this->get(route('bea.index'))->assertOk()
+        ->assertSee('id="beaImportModal"', false)
+        ->assertSeeLivewire(Import::class)
+        ->assertSeeLivewire(Upload::class);
+
+    $zip = app(BeaStorage::class)->inboxPath().'/nachricht.zip';
+    Storage::disk('beas')->put($zip, file_get_contents(beaFixtureZip()));
+
+    Livewire::test(Import::class, ['modal' => true])
+        ->set('selectedFiles', [$zip])
+        ->call('ingest')
+        ->assertSee('beA 100000001 eingelesen')
+        ->assertDontSee(route('bea.select', BeaMessage::sole()))
+        ->assertDispatched('bea-ingested', count: 1);
+
+    expect(BeaMessage::sole()->status)->toBe(BeaMessage::STATUS_INGESTED)
+        ->and(File::count())->toBe(0);
+
+    // Bereits eingelesen: nichts Neues, kein Neuladen der Liste
+    Livewire::test(Upload::class, ['modal' => true])
+        ->set('zips', [UploadedFile::fake()->createWithContent('Nachricht.zip', file_get_contents(beaFixtureZip()))])
+        ->call('ingest')
+        ->assertSee('war bereits eingelesen')
+        ->assertNotDispatched('bea-ingested');
 });
 
 test('der Eingang listet ZIPs der Disk und liest die markierten ein', function () {
@@ -112,6 +153,35 @@ test('Liste und Detailseite zeigen Nachricht, Dateien und Prüfung', function ()
 
     $this->post(route('bea.verify', $message))->assertRedirect(route('bea.show', ['message' => $message, 'tab' => 'pruefung']));
     expect($message->verifications()->count())->toBe(2);
+});
+
+test('Liste sortiert nach Eingang, die Detailseite blättert durch die gefilterte Liste', function () {
+    $neu = app(BeaImporter::class)->ingest(beaFixtureZip())['imported'][0];
+    $alt = $neu->replicate()->fill([
+        'bea_id' => '100000002',
+        'subject' => 'Älteres Schreiben',
+        'received_at' => $neu->received_at->subYear(),
+        'status' => BeaMessage::STATUS_ACCEPTED,
+    ]);
+    $alt->save();
+
+    $this->get(route('bea.index'))->assertOk()->assertSeeInOrder(['Ladung zum Termin', 'Älteres Schreiben']);
+    $this->get(route('bea.index', ['sort' => 'received_at', 'direction' => 'asc']))->assertOk()
+        ->assertSeeInOrder(['Älteres Schreiben', 'Ladung zum Termin']);
+    $this->get(route('bea.index', ['search' => 'Älteres']))->assertOk()->assertDontSee('Ladung zum Termin');
+    $this->get(route('bea.index', ['jahr' => $alt->received_at->year]))->assertOk()->assertDontSee('Ladung zum Termin');
+
+    $navigation = $this->get(route('bea.show', $neu))->assertOk()->viewData('navigation');
+    expect($navigation['totalCount'])->toBe(2)
+        ->and($navigation['currentPosition'])->toBe(1)
+        ->and($navigation['next']->is($alt))->toBeTrue();
+
+    // Gefiltert auf „eingelesen“ bleibt nur die neue Nachricht übrig
+    $navigation = $this->get(route('bea.show', ['message' => $neu, 'status' => 'ingested']))->viewData('navigation');
+    expect($navigation['totalCount'])->toBe(1)->and($navigation['next'])->toBeNull();
+
+    $this->post(route('bea.verify', ['message' => $neu, 'status' => 'ingested']))
+        ->assertRedirect(route('bea.show', ['message' => $neu, 'status' => 'ingested', 'tab' => 'pruefung']));
 });
 
 test('das Listing findet Nachrichten über Zuordnung und über übernommene Dateien', function () {
