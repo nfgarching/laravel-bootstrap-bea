@@ -30,6 +30,10 @@ beforeEach(function () {
     config([
         'files.save_disk' => 'local',
         'bea.disk' => 'beas',
+        'bea.inbox.disk' => null,
+        'bea.inbox.path' => 'inbox',
+        'bea.archive.path' => 'archive',
+        'bea.failed.path' => 'failed',
         'bea.assign.types' => [
             'user' => ['label' => 'Benutzer', 'model' => User::class, 'search' => ['name'], 'display' => 'name'],
         ],

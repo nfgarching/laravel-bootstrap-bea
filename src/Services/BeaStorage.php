@@ -23,6 +23,24 @@ class BeaStorage
         return Storage::disk($this->diskName());
     }
 
+    /**
+     * Disk des Eingangs; ohne eigene Angabe die Disk „beas“.
+     */
+    public function inboxDiskName(): string
+    {
+        return (string) (config('bea.inbox.disk') ?: $this->diskName());
+    }
+
+    public function inboxDisk(): Filesystem
+    {
+        return Storage::disk($this->inboxDiskName());
+    }
+
+    public function deleteInboxFile(string $inboxFile): void
+    {
+        $this->inboxDisk()->delete($inboxFile);
+    }
+
     public function inboxPath(): string
     {
         return trim((string) config('bea.inbox.path', 'inbox'), '/');
@@ -40,7 +58,7 @@ class BeaStorage
      */
     public function inboxFiles(): array
     {
-        $files = array_filter($this->disk()->files($this->inboxPath()), fn ($f) => str_ends_with(strtolower($f), '.zip'));
+        $files = array_filter($this->inboxDisk()->files($this->inboxPath()), fn ($f) => str_ends_with(strtolower($f), '.zip'));
         sort($files);
 
         return array_values($files);
@@ -53,8 +71,9 @@ class BeaStorage
     {
         $path = str_replace('\\', '/', $path);
 
+        // Nur Dateien direkt im Eingang – Archiv/failed dürfen darunter liegen
         return ! str_contains($path, '..')
-            && str_starts_with($path, $this->inboxPath().'/')
+            && dirname($path) === ($this->inboxPath() === '' ? '.' : $this->inboxPath())
             && str_ends_with(strtolower($path), '.zip');
     }
 
@@ -142,10 +161,32 @@ class BeaStorage
     }
 
     /**
-     * Verschiebt eine nicht einlesbare ZIP aus dem Eingang nach failed/.
+     * Verschiebt eine nicht einlesbare ZIP aus dem Eingang nach failed/ der
+     * Disk „beas“ – auch wenn der Eingang auf einer anderen Disk liegt.
      */
     public function moveToFailed(string $inboxFile): void
     {
-        $this->disk()->move($inboxFile, $this->failedPath().'/'.date('Ymd-His').'_'.basename($inboxFile));
+        $target = $this->failedPath().'/'.date('Ymd-His').'_'.basename($inboxFile);
+
+        if ($this->inboxDiskName() === $this->diskName()) {
+            $this->disk()->move($inboxFile, $target);
+
+            return;
+        }
+
+        $stream = $this->inboxDisk()->readStream($inboxFile);
+        if (! is_resource($stream)) {
+            throw new InvalidBeaArchive('Datei nicht lesbar: '.$this->inboxDiskName().'/'.$inboxFile);
+        }
+        try {
+            if (! $this->disk()->writeStream($target, $stream)) {
+                throw new InvalidBeaArchive('ZIP-Datei ließ sich nicht nach „'.$this->failedPath().'“ verschieben.');
+            }
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+        }
+        $this->deleteInboxFile($inboxFile);
     }
 }

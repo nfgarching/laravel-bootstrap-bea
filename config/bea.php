@@ -19,6 +19,8 @@ return [
     'disk_root' => env('BEA_DISK_ROOT'),
 
     'inbox' => [
+        // Eigene Disk für den Eingang (z. B. „scans“), leer = Disk „beas“
+        'disk' => env('BEA_INBOX_DISK'),
         'path' => env('BEA_INBOX_PATH', 'inbox'),
         // Cron-Ausdruck für das automatische Einlesen, leer = aus
         'schedule' => env('BEA_IMPORT_SCHEDULE'),

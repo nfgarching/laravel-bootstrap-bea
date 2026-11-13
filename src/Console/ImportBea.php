@@ -7,7 +7,7 @@ use Nfgarching\Bea\Services\BeaImporter;
 use Nfgarching\Bea\Services\BeaStorage;
 
 /**
- * Liest beA-Exporte (ZIP) aus dem Eingang der Disk „beas“ oder aus
+ * Liest beA-Exporte (ZIP) aus dem Eingang (bea.inbox) oder aus
  * angegebenen Dateien ein. Es wird nur eingelesen: Welche Dateien ins
  * Files-Package übernommen werden, entscheidet man von Hand im Browser.
  */
@@ -49,11 +49,11 @@ class ImportBea extends Command
         foreach ($zips as $zip) {
             $local = null;
             try {
-                $local = $storage->localCopy($storage->diskName(), $zip);
+                $local = $storage->localCopy($storage->inboxDiskName(), $zip);
                 if ($this->ingestOne($importer, $local, basename($zip), 'inbox')) {
                     // Das Original liegt jetzt unter archive/ – der Eingang wird geleert
                     if (! $this->option('keep')) {
-                        $storage->disk()->delete($zip);
+                        $storage->deleteInboxFile($zip);
                     }
                 } else {
                     $failed++;

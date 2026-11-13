@@ -27,6 +27,8 @@ return new class extends Migration
             $table->string('directory', 1024)->nullable();      // Ordner der Nachricht in der ZIP
             $table->string('status', 32)->default('ingested')->index(); // ingested | accepted
 
+            $table->nullableMorphs('model');                    // wird erst später belegt
+
             $table->string('bea_id', 64)->nullable()->unique();
             $table->string('osci_id', 191)->nullable()->index();
             $table->string('subject', 1024)->nullable();

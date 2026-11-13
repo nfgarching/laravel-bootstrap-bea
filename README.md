@@ -230,7 +230,8 @@ bleibt dafür samt Signatur im Original erhalten.
 | Variable | Standard | Bedeutung |
 |---|---|---|
 | `BEA_DISK` / `BEA_DISK_ROOT` | `beas` / `storage/app/beas` | Disk für Eingang und Originale |
-| `BEA_INBOX_PATH` | `inbox` | Eingang auf der Disk |
+| `BEA_INBOX_DISK` | – (= `BEA_DISK`) | eigene Disk für den Eingang, z. B. `scans`; Archiv und `failed/` bleiben auf `BEA_DISK` |
+| `BEA_INBOX_PATH` | `inbox` | Eingang auf der (Eingangs-)Disk |
 | `BEA_ARCHIVE_PATH` / `BEA_FAILED_PATH` | `archive` / `failed` | Originale bzw. nicht einlesbare ZIPs |
 | `BEA_IMPORT_SCHEDULE` | – | Cron-Ausdruck für `bea:import` |
 | `BEA_FILES_COLLECTION` | `bea` | `collection_name` der übernommenen Dateien |

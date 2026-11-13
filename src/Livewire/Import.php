@@ -39,7 +39,7 @@ class Import extends Component
     public function files(): array
     {
         $storage = app(BeaStorage::class);
-        $disk = $storage->disk();
+        $disk = $storage->inboxDisk();
 
         $files = array_map(fn (string $path) => [
             'path' => $path,
@@ -77,7 +77,7 @@ class Import extends Component
     {
         $storage = app(BeaStorage::class);
         if ($storage->isInboxFile($file)) {
-            $storage->disk()->delete($file);
+            $storage->deleteInboxFile($file);
         }
         $this->selectedFiles = array_values(array_diff($this->selectedFiles, [$file]));
         unset($this->files);
@@ -93,15 +93,15 @@ class Import extends Component
         $this->results = [];
 
         foreach ($this->selectedFiles as $file) {
-            if (! $storage->isInboxFile($file) || ! $storage->disk()->exists($file)) {
+            if (! $storage->isInboxFile($file) || ! $storage->inboxDisk()->exists($file)) {
                 continue;
             }
 
             $local = null;
             try {
-                $local = $storage->localCopy($storage->diskName(), $file);
+                $local = $storage->localCopy($storage->inboxDiskName(), $file);
                 if ($this->ingestLocal($local, basename($file), 'inbox')) {
-                    $storage->disk()->delete($file);
+                    $storage->deleteInboxFile($file);
                 } else {
                     $storage->moveToFailed($file);
                 }
@@ -122,7 +122,7 @@ class Import extends Component
     public function render(): View
     {
         return view('bea::livewire.import', [
-            'diskName' => app(BeaStorage::class)->diskName(),
+            'diskName' => app(BeaStorage::class)->inboxDiskName(),
             'inboxPath' => app(BeaStorage::class)->inboxPath(),
         ]);
     }
