@@ -231,11 +231,12 @@ erfundene Daten):
 |---|---|---|
 | `bea_id` | Exportansicht / Dateiname | beA-Nachrichten-ID |
 | `osci_id` | Exportansicht / OSCI-Umschlag | OSCI-Nachrichten-ID |
-| `aktenzeichen` | XJustiz (Empfänger), sonst Exportansicht | eigenes Aktenzeichen – Freitext des Absenders |
-| `aktenzeichen_absender` | XJustiz (Absender), sonst Exportansicht | Aktenzeichen des Absenders |
+| `direction` | Journal der Exportansicht, sonst `bea.own_safe_ids` | `in` (empfangen) oder `out` (gesendet: „Zeitpunkt des erfolgreichen Versands (bei versandten Nachrichten)“) |
+| `aktenzeichen` | XJustiz, sonst Exportansicht | **eigenes** Aktenzeichen: bei empfangenen das des Empfängers, bei gesendeten das des Absenders |
+| `aktenzeichen_absender` | XJustiz, sonst Exportansicht | Aktenzeichen der **Gegenseite**: bei empfangenen des Absenders, bei gesendeten des Empfängers |
 | `sender` | VHN, XJustiz, Exportansicht | Name, Anschrift, SAFE-ID, Rolle (`egvp_justiz`, `egvp_bebpo`, …) |
 | `recipient` | Exportansicht, XJustiz | Anzeige und SAFE-ID |
-| `sent_at`, `received_at`, `intermediary_at` | Exportansicht | Gesendet, Eingang Postfach, Eingang Intermediär (ISO 8601, Ortszeit) |
+| `sent_at`, `received_at`, `intermediary_at` | Exportansicht | Gesendet, Eingang Postfach, Eingang Intermediär (ISO 8601, Ortszeit). Gesendete Nachrichten haben kein „Eingang Postfach“ |
 | `secure_channel` | VHN | sicherer Übermittlungsweg |
 | `eeb_requested` | XJustiz | elektronisches Empfangsbekenntnis angefordert |
 | `xjustiz.instances` | XJustiz | Instanz, Gericht (Code), Sachgebiet (Code), Aktenzeichen, Gegenstand |

@@ -19,7 +19,7 @@
                 <tbody>
                     @forelse ($rows as $item)
                         <tr wire:key="bea-{{ $item->id }}">
-                            <td class="text-nowrap small">{{ $item->received_at?->timezone(config('app.timezone'))->format('d.m.Y H:i') ?? '–' }}</td>
+                            <td class="text-nowrap small">{{ $item->dated_at?->timezone(config('app.timezone'))->format('d.m.Y H:i') ?? '–' }}@if ($item->isOutgoing()) <i class="bi bi-send text-info" title="gesendet"></i>@endif</td>
                             <td class="small">
                                 <a href="{{ route('bea.show', $item) }}" class="text-decoration-none">{{ $item->subject ?: '(ohne Betreff)' }}</a>
                                 @if ($item->eeb_requested)

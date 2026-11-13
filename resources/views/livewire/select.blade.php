@@ -19,9 +19,9 @@
         <div class="card-body small">
             <div class="row g-2">
                 <div class="col-md-6"><span class="text-muted">Absender:</span> {{ $message->sender_name ?? '–' }}</div>
-                <div class="col-md-6"><span class="text-muted">Eingang:</span> {{ $message->received_at?->timezone(config('app.timezone'))->format('d.m.Y H:i') ?? '–' }}</div>
+                <div class="col-md-6"><span class="text-muted">{{ $message->datedLabel() }}:</span> {{ $message->dated_at?->timezone(config('app.timezone'))->format('d.m.Y H:i') ?? '–' }}@if ($message->isOutgoing()) <span class="badge text-bg-info">gesendet</span>@endif</div>
                 <div class="col-md-6"><span class="text-muted">Unser Aktenzeichen:</span> {{ $message->aktenzeichen ?? '–' }}</div>
-                <div class="col-md-6"><span class="text-muted">Aktenzeichen Absender:</span> {{ $message->aktenzeichen_absender ?? '–' }}</div>
+                <div class="col-md-6"><span class="text-muted">Aktenzeichen {{ $message->isOutgoing() ? 'Empfänger' : 'Absender' }}:</span> {{ $message->aktenzeichen_absender ?? '–' }}</div>
             </div>
             @if ($message->integrity !== 'complete' || ! in_array($message->vhn_signature, ['valid', 'signature_ok'], true))
                 <div class="alert alert-warning py-2 mt-3 mb-0">

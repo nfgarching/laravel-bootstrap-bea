@@ -30,7 +30,7 @@
                         <span class="badge text-bg-danger" title="Elektronisches Empfangsbekenntnis angefordert">eEB</span>
                     @endif
                 </div>
-                <div class="small text-muted">{{ $message->sender_name }} · Eingang {{ $date($message->received_at) }}</div>
+                <div class="small text-muted">{{ $message->sender_name }} · {{ $message->datedLabel() }} {{ $date($message->dated_at) }}@if ($message->isOutgoing()) <span class="badge text-bg-info">gesendet</span>@endif</div>
             </div>
             <span class="text-nowrap">@include('bea::parts.badges', ['item' => $message, 'verification' => $latest])</span>
             <span class="badge text-bg-{{ $message->isAccepted() ? 'success' : 'warning' }}">{{ $message->isAccepted() ? 'übernommen' : 'eingelesen' }}</span>
@@ -62,7 +62,7 @@
                         <tr><th>Rolle</th><td>{{ $message->sender_role ?? '–' }}</td></tr>
                         <tr><th>Empfänger</th><td>{{ $message->recipient_name ?? '–' }}<div class="text-muted text-break">{{ $message->recipient_safe_id }}</div></td></tr>
                         <tr><th>Unser AZ</th><td>{{ $message->aktenzeichen ?? '–' }}</td></tr>
-                        <tr><th>AZ Absender</th><td>{{ $message->aktenzeichen_absender ?? '–' }}</td></tr>
+                        <tr><th>AZ {{ $message->isOutgoing() ? 'Empfänger' : 'Absender' }}</th><td>{{ $message->aktenzeichen_absender ?? '–' }}</td></tr>
                         <tr><th>Gesendet</th><td>{{ $date($message->sent_at) }}</td></tr>
                         <tr><th>Eingang Postfach</th><td>{{ $date($message->received_at) }}</td></tr>
                         <tr><th>Eingang Intermediär</th><td>{{ $date($message->intermediary_at) }}</td></tr>

@@ -61,7 +61,7 @@ class Listing extends Component
             ])
             ->forOwners($owners)
             ->search($this->search)
-            ->orderByDesc('received_at')
+            ->orderByDesc('dated_at')
             ->orderByDesc('id')
             ->paginate($this->perPage, pageName: 'beaPage');
 

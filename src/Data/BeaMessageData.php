@@ -13,6 +13,10 @@ use DateTimeImmutable;
  */
 final class BeaMessageData
 {
+    public const string DIRECTION_IN = 'in';
+
+    public const string DIRECTION_OUT = 'out';
+
     /**
      * @param  array<string, mixed>  $sender  name, safe_id, street, house_number, postal_code, city, state, country, organisation, role, display
      * @param  array<string, mixed>  $recipient  display, safe_id
@@ -47,7 +51,23 @@ final class BeaMessageData
         public readonly array $journal,
         public readonly array $integrity,
         public readonly array $warnings = [],
+        public readonly string $direction = self::DIRECTION_IN,
     ) {}
+
+    public function isOutgoing(): bool
+    {
+        return $this->direction === self::DIRECTION_OUT;
+    }
+
+    /**
+     * Maßgebliches Datum: Eingang im Postfach, bei gesendeten Nachrichten der Versand.
+     */
+    public function datedAt(): ?DateTimeImmutable
+    {
+        return $this->isOutgoing()
+            ? ($this->sentAt ?? $this->receivedAt)
+            : ($this->receivedAt ?? $this->sentAt);
+    }
 
     /**
      * Eindeutiger Schlüssel gegen Doppelimporte.
@@ -70,6 +90,7 @@ final class BeaMessageData
             'subject' => $this->subject,
             'sender' => $this->sender,
             'recipient' => $this->recipient,
+            'direction' => $this->direction,
             'aktenzeichen' => $this->aktenzeichen,
             'aktenzeichen_absender' => $this->aktenzeichenAbsender,
             'sent_at' => $date($this->sentAt),

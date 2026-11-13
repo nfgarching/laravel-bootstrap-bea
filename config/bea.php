@@ -118,7 +118,24 @@ return [
         'types' => [],
         // Muster, mit dem das eigene Aktenzeichen aus dem Freitext des Absenders gelesen wird
         'aktenzeichen_pattern' => '#\d{2}/\d{3,5}#',
+        // Übernehmen im Modal/Popup (bea.pending): Schlüssel aus „data“ des
+        // Aufrufs, die zusätzlich zugeordnet werden, z. B.
+        //   'Register_ID' => ['type' => 'akte', 'column' => 'ID'],
+        'context' => [],
     ],
+
+    /*
+    | Aufrufkontext ohne model_type (wie files.default_model_type): Nachrichten
+    | werden keinem weiteren Modell zugeordnet.
+    */
+    'default_model_type' => env('BEA_DEFAULT_MODEL_TYPE', 'App\\Models\\User'),
+
+    /*
+    | Eigene SAFE-IDs (kommagetrennt): erkennt gesendete Nachrichten, wenn das
+    | Journal der Exportansicht fehlt. Normalerweise genügt das Journal
+    | („Zeitpunkt des erfolgreichen Versands (bei versandten Nachrichten)“).
+    */
+    'own_safe_ids' => array_values(array_filter(array_map('trim', explode(',', (string) env('BEA_OWN_SAFE_IDS', ''))))),
 
     /*
     | Herkunftsnachweis (vhn.xml.p7s) mit OpenSSL prüfen. Ohne trust wird nur

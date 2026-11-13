@@ -64,6 +64,23 @@ class AssignTypes
     }
 
     /**
+     * Modell eines konfigurierten Typs über eine beliebige Spalte, z. B. die
+     * Akte über ihre Legacy-ID aus dem Aufrufkontext (bea.assign.context).
+     * Leere Spalte = Primärschlüssel.
+     */
+    public function findBy(string $key, string $column, mixed $value): ?Model
+    {
+        $type = $this->all()[$key] ?? null;
+        if (! $type || blank($value)) {
+            return null;
+        }
+
+        return $column === ''
+            ? $type['model']::query()->find($value)
+            : $type['model']::query()->where($column, $value)->first();
+    }
+
+    /**
      * Modell aus model_type/model_id (z. B. Aufruf aus einer Akte heraus).
      */
     public function resolve(?string $modelType, int|string|null $id): ?Model

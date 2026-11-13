@@ -9,8 +9,10 @@ use Livewire\Livewire;
 use Nfgarching\Bea\Console\ImportBea;
 use Nfgarching\Bea\Livewire\Import;
 use Nfgarching\Bea\Livewire\Listing;
+use Nfgarching\Bea\Livewire\Pending;
 use Nfgarching\Bea\Livewire\Select;
 use Nfgarching\Bea\Livewire\Upload;
+use Nfgarching\Core\Modals\ModalRegistry;
 use Nfgarching\Core\Navigation\NavbarNavigation;
 
 class BeaServiceProvider extends ServiceProvider
@@ -34,9 +36,19 @@ class BeaServiceProvider extends ServiceProvider
         Livewire::component('bea.import', Import::class);
         Livewire::component('bea.upload', Upload::class);
         Livewire::component('bea.select', Select::class);
+        // Nicht übernommene Nachrichten: Modal (Klick) bzw. Popup bea.pending (SHIFT)
+        Livewire::component('bea.pending', Pending::class);
         // In Akten, Dokumenten und Namen: <livewire:bea.listing :model_type="…" :model_id="…" />
         Livewire::component('bea.listing', Listing::class);
         Livewire::component('listing.bea', Listing::class);
+
+        if (class_exists(ModalRegistry::class)) {
+            $this->app->make(ModalRegistry::class)->modal(
+                'bea::parts.modals',
+                order: 95,
+                when: fn (): bool => Route::has('bea.pending'),
+            );
+        }
 
         if (class_exists(NavbarNavigation::class)) {
             $this->app->make(NavbarNavigation::class)->item(

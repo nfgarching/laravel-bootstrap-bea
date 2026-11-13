@@ -165,6 +165,7 @@ test('Liste sortiert nach Eingang, die Detailseite blättert durch die gefiltert
         'bea_id' => '100000002',
         'subject' => 'Älteres Schreiben',
         'received_at' => $neu->received_at->subYear(),
+        'dated_at' => $neu->dated_at->subYear(),
         'status' => BeaMessage::STATUS_ACCEPTED,
     ]);
     $alt->save();

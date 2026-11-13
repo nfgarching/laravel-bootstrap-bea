@@ -115,6 +115,30 @@ keine URL und keinen öffentlichen Link.
 Namen zuordnen, Betreff für die Übergabe festlegen. Nicht gewählte Dateien
 lassen sich später nachholen.
 
+### Mehrere Nachrichten auf einmal (Modal/Popup)
+
+`<livewire:bea.pending />` listet alle eingelesenen, noch nicht übernommenen
+Nachrichten. Markierte Nachrichten werden in einem Schritt mit ihren
+**vorgeschlagenen** Dateien übernommen, wie der Scan-Import des Files-Packages.
+
+- **Modal:** über die ModalRegistry in jedes Layout eingebunden
+  (`bea::parts.modals`), geöffnet per Livewire-Event
+  `openModalBeaPending` mit `data: {model_type, model_id, data}`.
+- **Popup:** Route `bea.pending` (`?model_type=…&model_id=…&data=…`).
+- Mit `<x-button.dispatch modalName="openModalBeaPending" :href="route('bea.pending')" …>`
+  öffnet ein Klick das Modal, **SHIFT** das Popup, CTRL einen Tab.
+- Standard ist `model_type` = `bea.default_model_type` (`App\Models\User`)
+  ohne ID: keine zusätzliche Zuordnung. Ein aufrufendes Modell (z. B. ein
+  Dokument) wird zugeordnet, sofern es in `bea.assign.types` steht; Schlüssel
+  aus `data` ordnet `bea.assign.context` zu
+  (`'Register_ID' => ['type' => 'akte', 'column' => 'ID']`).
+- Danach lädt die Seite (Modal) bzw. das aufrufende Fenster (Popup) neu.
+- **Vorschau:** Der Pfeil vor einer Nachricht klappt ihre Anlagen auf und
+  zeigt gleich die erste vorgeschlagene PDF im Modal (Klick: Vorschau,
+  SHIFT: Popup, CTRL: Tab). Die Datei kommt direkt aus der Original-ZIP über
+  `bea.file` (`/bea/{message}/file/{messageFile}`), nur Anlagen, nur wenn
+  die SHA-256 noch zum Einlesen passt (sonst 409).
+
 Die Zuordnung braucht die Modelle der Anwendung in `config/bea.php`:
 
 ```php
@@ -141,6 +165,23 @@ Die **erste Zuordnung** einer Nachricht ist die Hauptzuordnung: An sie gehen
 die übernommenen Dateien per `NewFiles`-Event des Files-Packages (wie bei
 Upload und Scan-Import). Ohne Zuordnung bleiben die Dateien bei der
 beA-Nachricht und werden mit der ersten Zuordnung nachgereicht.
+
+## Empfangene und gesendete Nachrichten
+
+Auch Exporte aus dem Ordner „Gesendet“ lassen sich einlesen. Die Richtung
+(`direction`: `in`/`out`) erkennt das Package am Journal der Exportansicht
+(„Zeitpunkt des erfolgreichen Versands (bei versandten Nachrichten)“), sonst
+an `BEA_OWN_SAFE_IDS`.
+
+- `dated_at` ist das maßgebliche Datum: Eingang im Postfach, bei gesendeten
+  Nachrichten der Versand (sie haben kein „Eingang Postfach“). Listen
+  sortieren und filtern (Jahr) danach; Filter „Richtung“ in der Liste.
+- `aktenzeichen` ist immer das **eigene** Aktenzeichen, `aktenzeichen_absender`
+  das der Gegenseite – bei gesendeten Nachrichten also getauscht gegenüber
+  der Exportansicht (die Rohwerte bleiben in `data.export_fields`). So greifen
+  Vorschlag und Vorab-Zuordnung zur Akte für beide Richtungen.
+- Gesendete Nachrichten tragen in Listen, Modal und Detailseite ein Badge
+  „gesendet“.
 
 ## Anzeigen
 
@@ -237,6 +278,7 @@ bleibt dafür samt Signatur im Original erhalten.
 | `BEA_FILES_COLLECTION` | `bea` | `collection_name` der übernommenen Dateien |
 | `BEA_VHN_VERIFY` | `true` | VHN-Signatur mit OpenSSL prüfen |
 | `BEA_VHN_TRUST` | – | PEM-Datei der BNotK-Zertifikate |
+| `BEA_OWN_SAFE_IDS` | – | eigene SAFE-IDs (kommagetrennt); erkennt gesendete Nachrichten, falls der Export kein Journal hat |
 | `BEA_UPLOAD_MAX_KB` | `204800` | maximale ZIP-Größe beim Upload |
 
 ## Datenschutz

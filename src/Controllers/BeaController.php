@@ -10,10 +10,13 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 use Nfgarching\Bea\Models\BeaMessage;
 use Nfgarching\Bea\Models\BeaMessageFile;
+use Nfgarching\Bea\Parser\BeaArchive as ZipReader;
 use Nfgarching\Bea\Services\AssignTypes;
 use Nfgarching\Bea\Services\BeaIntegrityChecker;
 use Nfgarching\Bea\Services\BeaStorage;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\Mime\MimeTypes;
 
 /**
  * Eingelesene beA-Nachrichten: Liste, Detail mit Prüfung und Verlauf,
@@ -34,6 +37,12 @@ class BeaController
 
     /** @var array<string, string> */
     private const array CHECK_OPTIONS = ['ok' => 'ohne Beanstandung', 'problem' => 'mit Beanstandung'];
+
+    /** @var array<string, string> */
+    private const array DIRECTION_OPTIONS = [
+        BeaMessage::DIRECTION_IN => 'empfangen',
+        BeaMessage::DIRECTION_OUT => 'gesendet',
+    ];
 
     public function index(Request $request): View
     {
@@ -73,6 +82,7 @@ class BeaController
             'statusOptions' => self::STATUS_OPTIONS,
             'assignedOptions' => self::ASSIGNED_OPTIONS,
             'checkOptions' => self::CHECK_OPTIONS,
+            'directionOptions' => self::DIRECTION_OPTIONS,
             'pending' => BeaMessage::where('status', BeaMessage::STATUS_INGESTED)->count(),
         ]);
     }
@@ -104,7 +114,8 @@ class BeaController
     private function filteredQuery(Request $request): Builder
     {
         return BeaMessage::query()
-            ->when($request->jahr, fn ($q, $v) => $q->whereYear('received_at', (int) $v))
+            ->when($request->jahr, fn ($q, $v) => $q->whereYear('dated_at', (int) $v))
+            ->when(isset(self::DIRECTION_OPTIONS[$request->input('richtung')]), fn ($q) => $q->where('direction', $request->input('richtung')))
             ->when($request->input('assigned') === '1', fn ($q) => $q->has('assignments'))
             ->when($request->input('assigned') === '0', fn ($q) => $q->doesntHave('assignments'))
             ->when($request->input('check') === 'problem', fn ($q) => $q->where(fn ($w) => $w
@@ -118,11 +129,15 @@ class BeaController
     }
 
     /**
-     * Ohne ?sort= neueste Eingänge zuerst (statt nach ID wie im Trait).
+     * Ohne ?sort= neueste zuerst nach Eingang bzw. Versand (statt nach ID wie
+     * im Trait). Alte Links mit sort=received_at sortieren ebenfalls danach.
      */
     private function defaultSort(Request $request): void
     {
-        $request->mergeIfMissing(['sort' => 'received_at', 'direction' => 'desc']);
+        if ($request->input('sort') === 'received_at') {
+            $request->merge(['sort' => 'dated_at']);
+        }
+        $request->mergeIfMissing(['sort' => 'dated_at', 'direction' => 'desc']);
     }
 
     /**
@@ -149,6 +164,48 @@ class BeaController
         abort_unless($archive && $storage->exists($archive), 404, 'Original-ZIP nicht gefunden.');
 
         return Storage::disk($archive->disk)->download($archive->path, $archive->original_name);
+    }
+
+    /**
+     * Eine Anlage direkt aus der Original-ZIP anzeigen (Vorschau vor dem
+     * Übernehmen). Ausgeliefert wird nur, was noch der beim Einlesen
+     * erfassten Prüfsumme entspricht.
+     */
+    public function file(BeaMessage $message, BeaMessageFile $messageFile, BeaStorage $storage, ZipReader $zip): Response
+    {
+        abort_unless(
+            (int) $messageFile->bea_message_id === (int) $message->id
+                && $messageFile->role === BeaMessageFile::ROLE_ATTACHMENT,
+            404,
+        );
+
+        $archive = $message->archive;
+        abort_unless($archive && $storage->exists($archive), 404, 'Original-ZIP nicht gefunden.');
+
+        $local = $storage->localArchive($archive);
+        try {
+            $content = $zip->read($local, (string) $messageFile->zip_path);
+        } finally {
+            @unlink($local);
+        }
+
+        abort_if($content === null, 404, 'Datei nicht in der Original-ZIP.');
+        abort_if(
+            $messageFile->sha256 && ! hash_equals($messageFile->sha256, hash('sha256', $content)),
+            409,
+            'Die Datei entspricht nicht der beim Einlesen erfassten Prüfsumme.',
+        );
+
+        $extension = strtolower(pathinfo((string) $messageFile->name, PATHINFO_EXTENSION));
+        $mime = MimeTypes::getDefault()->getMimeTypes($extension)[0] ?? 'application/octet-stream';
+        $name = str_replace('"', '', (string) $messageFile->name);
+
+        return response($content, 200, [
+            'Content-Type' => $mime,
+            'Content-Disposition' => 'inline; filename="'.$name.'"',
+            'X-Content-Type-Options' => 'nosniff',
+            'Cache-Control' => 'private, no-store',
+        ]);
     }
 
     public function import(Request $request): View
@@ -186,8 +243,8 @@ class BeaController
      */
     private function jahre(): array
     {
-        $min = BeaMessage::min('received_at');
-        $max = BeaMessage::max('received_at');
+        $min = BeaMessage::min('dated_at');
+        $max = BeaMessage::max('dated_at');
         if (! $min || ! $max) {
             return [];
         }

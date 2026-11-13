@@ -83,6 +83,50 @@ final class BeaArchive
         }
     }
 
+    /**
+     * Liest eine einzelne Datei aus der ZIP, ohne alles zu entpacken – z. B.
+     * für die Vorschau vor dem Übernehmen. $relative ist der Pfad, wie ihn
+     * extract() liefert (bea_message_files.zip_path). null, wenn es die Datei
+     * nicht gibt oder sie größer als $maxBytes ist.
+     */
+    public function read(string $zipPath, string $relative, int $maxBytes = 104857600): ?string
+    {
+        $zip = new ZipArchive;
+        if ($zip->open($zipPath, ZipArchive::RDONLY) !== true) {
+            throw new InvalidBeaArchive('ZIP-Datei lässt sich nicht öffnen: '.basename($zipPath));
+        }
+
+        try {
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $stat = $zip->statIndex($i);
+                $name = str_replace('\\', '/', (string) ($stat['name'] ?? ''));
+                if ($name === '' || str_ends_with($name, '/')) {
+                    continue;
+                }
+
+                try {
+                    if ($this->safePath($name) !== $relative) {
+                        continue;
+                    }
+                } catch (InvalidBeaArchive) {
+                    continue;
+                }
+
+                if ((int) ($stat['size'] ?? 0) > $maxBytes) {
+                    return null;
+                }
+
+                $content = $zip->getFromIndex($i, $maxBytes + 1);
+
+                return $content === false || strlen($content) > $maxBytes ? null : $content;
+            }
+
+            return null;
+        } finally {
+            $zip->close();
+        }
+    }
+
     private function safePath(string $name): string
     {
         $parts = [];

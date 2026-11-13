@@ -33,21 +33,24 @@
         if ($request->jahr) {
             $activeFilters['jahr'] = 'Jahr: ' . $request->jahr;
         }
+        if (isset($directionOptions[$request->richtung])) {
+            $activeFilters['richtung'] = $directionOptions[$request->richtung];
+        }
         $activeFilterCount = count($activeFilters);
 
-        $sortField = strtolower((string) $request->get('sort', 'received_at'));
+        $sortField = strtolower((string) $request->get('sort', 'dated_at'));
         $sortAsc = strtoupper((string) $request->get('direction', 'DESC')) === 'ASC';
         $sortFields = [
-            'received_at' => 'Eingang',
+            'dated_at' => 'Datum',
             'sender_name' => 'Absender',
             'subject' => 'Betreff',
             'aktenzeichen' => 'Unser AZ',
-            'aktenzeichen_absender' => 'AZ Absender',
+            'aktenzeichen_absender' => 'AZ Gegenseite',
             'status' => 'Status',
             'id' => 'Einlesen',
         ];
         // Parameter, die Suche und Schnellfilter im Kopf nicht selbst senden
-        $keepParams = ['assigned', 'eeb', 'jahr', 'per_page', 'sort', 'direction', 'model_type', 'model_id'];
+        $keepParams = ['assigned', 'eeb', 'jahr', 'richtung', 'per_page', 'sort', 'direction', 'model_type', 'model_id'];
     @endphp
 
     <x-card>
@@ -140,11 +143,11 @@
         <x-table :acc_id="$token" class="table-sm table-hover mb-0 align-middle">
             <x-slot:header>
                 <x-table.head.sort field="id" />
-                <x-table.head.sort field="received_at" label="Eingang" />
-                <x-table.head.sort field="sender_name" label="Absender" />
+                <x-table.head.sort field="dated_at" label="Datum" />
+                <x-table.head.sort field="sender_name" label="Absender / Empfänger" />
                 <x-table.head.sort field="subject" label="Betreff" width="40%" />
                 <x-table.head.sort field="aktenzeichen" label="Unser AZ" />
-                <x-table.head.sort field="aktenzeichen_absender" label="AZ Absender" />
+                <x-table.head.sort field="aktenzeichen_absender" label="AZ Gegenseite" />
                 <th class="text-center" title="übernommen / Dateien"><i class="bi bi-paperclip"></i></th>
                 <th></th>
                 <th></th>
@@ -166,9 +169,22 @@
                             <i class="bi bi-info-square"></i>
                         </a>
                     </td>
-                    <td class="text-nowrap small">
-                        {{ $item->received_at?->timezone(config('app.timezone'))->format('d.m.Y H:i') ?? '–' }}</td>
-                    <td class="small">{{ $item->sender_name }}</td>
+                    <td class="text-nowrap small" title="{{ $item->datedLabel() }}">
+                        {{ $item->dated_at?->timezone(config('app.timezone'))->format('d.m.Y H:i') ?? '–' }}
+                        @if ($item->isOutgoing())
+                            <span class="badge text-bg-info" title="gesendete Nachricht"><i class="bi bi-send"></i></span>
+                        @endif
+                    </td>
+                    <td class="small">
+                        @if ($item->isOutgoing())
+                            {{-- Gesendet: der Absender ist die Kanzlei, interessant ist der Empfänger --}}
+                            <span title="Empfänger (gesendet von {{ $item->sender_name }})">
+                                <i class="bi bi-arrow-right text-info"></i> {{ $item->recipient_name ?? '–' }}
+                            </span>
+                        @else
+                            {{ $item->sender_name }}
+                        @endif
+                    </td>
                     <td class="small">
                         <a href="{{ route('bea.show', $showParams) }}"
                             class="text-decoration-none">{{ $item->subject ?: '(ohne Betreff)' }}</a>
@@ -337,6 +353,11 @@
                                 <label class="form-label small fw-semibold">Jahr</label>
                                 <x-table.filter.dropdown field="jahr" :options="$jahre" :oldval="$request->jahr"
                                     label="Jahr" onchange="" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold">Richtung</label>
+                                <x-table.filter.dropdown field="richtung" :options="$directionOptions" :oldval="$request->richtung"
+                                    label="Richtung" onchange="" />
                             </div>
                             <div class="col-12">
                                 <div class="form-check">

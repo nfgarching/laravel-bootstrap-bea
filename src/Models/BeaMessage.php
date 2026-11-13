@@ -23,6 +23,12 @@ class BeaMessage extends Model
 
     public const string STATUS_ACCEPTED = 'accepted';
 
+    /** Empfangene Nachricht */
+    public const string DIRECTION_IN = 'in';
+
+    /** Gesendete Nachricht (Export aus dem Ordner „Gesendet“) */
+    public const string DIRECTION_OUT = 'out';
+
     protected $guarded = ['id', 'created_at', 'updated_at'];
 
     /**
@@ -30,13 +36,14 @@ class BeaMessage extends Model
      *
      * @var list<string>
      */
-    public $sortable = ['id', 'received_at', 'sender_name', 'subject', 'aktenzeichen', 'aktenzeichen_absender', 'status'];
+    public $sortable = ['id', 'dated_at', 'received_at', 'sent_at', 'sender_name', 'subject', 'aktenzeichen', 'aktenzeichen_absender', 'status'];
 
     protected function casts(): array
     {
         return [
             'sent_at' => 'datetime',
             'received_at' => 'datetime',
+            'dated_at' => 'datetime',
             'intermediary_at' => 'datetime',
             'accepted_at' => 'datetime',
             'secure_channel' => 'boolean',
@@ -116,6 +123,19 @@ class BeaMessage extends Model
     public function isAssigned(): bool
     {
         return $this->assignments->isNotEmpty();
+    }
+
+    public function isOutgoing(): bool
+    {
+        return $this->direction === self::DIRECTION_OUT;
+    }
+
+    /**
+     * Beschriftung des maßgeblichen Datums (dated_at): „Eingang“ bzw. „Gesendet“.
+     */
+    public function datedLabel(): string
+    {
+        return $this->isOutgoing() ? 'Gesendet' : 'Eingang';
     }
 
     public function isAccepted(): bool

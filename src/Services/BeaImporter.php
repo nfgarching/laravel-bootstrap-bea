@@ -123,6 +123,8 @@ class BeaImporter
                 'sent_at' => $this->carbon($data->sentAt),
                 'received_at' => $this->carbon($data->receivedAt),
                 'intermediary_at' => $this->carbon($data->intermediaryAt),
+                'direction' => $data->direction,
+                'dated_at' => $this->carbon($data->datedAt()),
                 'secure_channel' => $data->secureChannel,
                 'eeb_requested' => $data->eebRequested,
                 'integrity' => $integrity,
@@ -425,6 +427,8 @@ class BeaImporter
             'aktenzeichen_absender' => $message->aktenzeichen_absender,
             'sender' => $message->sender_name,
             'received_at' => $message->received_at?->toIso8601String(),
+            'sent_at' => $message->sent_at?->toIso8601String(),
+            'direction' => $message->direction,
             'eeb_requested' => (bool) $message->eeb_requested,
             'assignments' => $message->assignments->map(fn ($a) => ['type' => $a->assignable_type, 'id' => $a->assignable_id])->all(),
         ];

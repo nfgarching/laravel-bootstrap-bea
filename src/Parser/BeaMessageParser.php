@@ -145,18 +145,29 @@ final class BeaMessageParser
             'display' => $fields['Absender'] ?? null,
         ], fn ($v) => $v !== null && $v !== '');
 
+        $recipient = array_filter([
+            'display' => $fields['Empfänger'] ?? null,
+            'safe_id' => $xjustiz['recipient']['safe_id'] ?? null,
+        ]);
+        $direction = $this->direction($export['journal'], $sender, $recipient);
+
+        // „aktenzeichen“ ist immer das eigene: bei gesendeten Nachrichten steht
+        // es beim Absender (die Kanzlei), das des Gerichts beim Empfänger
+        $azEmpfaenger = $this->blankToNull($xjustiz['recipient']['aktenzeichen'] ?? null) ?? $this->blankToNull($fields['Aktenzeichen Empfänger'] ?? null);
+        $azAbsender = $this->blankToNull($xjustiz['sender']['aktenzeichen'] ?? null) ?? $this->blankToNull($fields['Aktenzeichen Sender'] ?? null);
+        [$azEigenes, $azGegenseite] = $direction === BeaMessageData::DIRECTION_OUT
+            ? [$azAbsender, $azEmpfaenger]
+            : [$azEmpfaenger, $azAbsender];
+
         return new BeaMessageData(
             directory: $directory,
             beaId: $beaId ?: null,
             osciId: $fields['OSCI-Nachrichten-ID'] ?? $osci['message_id'] ?? null,
             subject: $fields['Betreff'] ?? $osci['subject'] ?? null,
             sender: $sender,
-            recipient: array_filter([
-                'display' => $fields['Empfänger'] ?? null,
-                'safe_id' => $xjustiz['recipient']['safe_id'] ?? null,
-            ]),
-            aktenzeichen: $this->blankToNull($xjustiz['recipient']['aktenzeichen'] ?? null) ?? $this->blankToNull($fields['Aktenzeichen Empfänger'] ?? null),
-            aktenzeichenAbsender: $this->blankToNull($xjustiz['sender']['aktenzeichen'] ?? null) ?? $this->blankToNull($fields['Aktenzeichen Sender'] ?? null),
+            recipient: $recipient,
+            aktenzeichen: $azEigenes,
+            aktenzeichenAbsender: $azGegenseite,
             sentAt: $this->date($fields['Gesendet'] ?? null) ?? $this->date($xjustiz['created_at'] ?? null),
             receivedAt: $this->date($fields['Eingang Postfach'] ?? null),
             intermediaryAt: $this->date($fields['Eingang Intermediär'] ?? null),
@@ -170,7 +181,36 @@ final class BeaMessageParser
             journal: $export['journal'],
             integrity: $integrity,
             warnings: $warnings,
+            direction: $direction,
         );
+    }
+
+    /**
+     * Empfangen oder gesendet: zuerst das Nachrichtenjournal der Exportansicht
+     * („Zeitpunkt des erfolgreichen Versands (bei versandten Nachrichten)“ bzw.
+     * „Zeitpunkt des Empfangs (bei empfangenen Nachrichten)“), sonst die
+     * eigenen SAFE-IDs (bea.own_safe_ids).
+     *
+     * @param  list<array<string, string>>  $journal
+     * @param  array<string, mixed>  $sender
+     * @param  array<string, mixed>  $recipient
+     */
+    private function direction(array $journal, array $sender, array $recipient): string
+    {
+        $events = mb_strtolower(implode(' ', array_map(fn ($e) => (string) ($e['Ereignis'] ?? ''), $journal)));
+        if (str_contains($events, 'versandt')) {
+            return BeaMessageData::DIRECTION_OUT;
+        }
+        if (str_contains($events, 'empfang')) {
+            return BeaMessageData::DIRECTION_IN;
+        }
+
+        $own = array_values(array_filter((array) config('bea.own_safe_ids', [])));
+        if ($own !== [] && in_array($sender['safe_id'] ?? null, $own, true)) {
+            return BeaMessageData::DIRECTION_OUT;
+        }
+
+        return BeaMessageData::DIRECTION_IN;
     }
 
     /**
