@@ -2,9 +2,9 @@
 
 namespace Nfgarching\Bea\Livewire;
 
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 use Livewire\Attributes\Computed;
@@ -12,8 +12,8 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Nfgarching\Bea\Data\BeaFile;
 use Nfgarching\Bea\Models\BeaMessage;
-use Nfgarching\Bea\Models\BeaMessageFile;
 use Nfgarching\Bea\Services\AssignTypes;
 use Nfgarching\Bea\Services\BeaImporter;
 
@@ -28,10 +28,12 @@ use Nfgarching\Bea\Services\BeaImporter;
  *    „openModalBeaPending“ mit data: {model_type, model_id, data}.
  *  - Popup: Route bea.pending (?model_type=…&model_id=…&data=…).
  *
- * Standard ist model_type App\Models\User ohne ID: Die Nachricht wird dann
- * keinem Modell zusätzlich zugeordnet. Kommt der Aufruf aus einem Modell
- * (z. B. App\Models\Dokument), wird die Nachricht ihm zugeordnet – sofern
- * es in bea.assign.types konfiguriert ist.
+ * Standard ist model_type App\Models\User ohne ID: Die Zuordnung der
+ * Nachricht bleibt, wie sie ist (der User). Kommt der Aufruf aus einem Modell
+ * (z. B. App\Models\Dokument), wird die Nachricht ihm zugeordnet und die
+ * Dateien gehen an dieses Modell – sofern es in bea.assign.types
+ * konfiguriert ist. Schlüssel aus data (bea.assign.context, z. B. die Akte)
+ * gehen als Kontext an die Anwendung.
  */
 #[Layout('layout::popup')]
 class Pending extends Component
@@ -72,7 +74,7 @@ class Pending extends Component
     /** Aufgeklappte Nachricht: zeigt ihre Anlagen */
     public ?int $expanded = null;
 
-    /** Anlage (bea_message_files.id) in der Vorschau */
+    /** Anlage (BeaFile::$id) in der Vorschau */
     public ?int $previewFile = null;
 
     protected string $paginationTheme = 'bootstrap';
@@ -144,14 +146,6 @@ class Pending extends Component
 
         return BeaMessage::query()
             ->where('status', BeaMessage::STATUS_INGESTED)
-            ->with('assignments')
-            ->withCount([
-                'messageFiles as attachments_count' => fn ($q) => $q->where('role', BeaMessageFile::ROLE_ATTACHMENT),
-                'messageFiles as suggested_count' => fn ($q) => $q
-                    ->where('role', BeaMessageFile::ROLE_ATTACHMENT)
-                    ->where('suggested', true)
-                    ->whereNull('accepted_at'),
-            ])
             ->search($this->search)
             ->orderBy($sort, $direction)
             ->orderByDesc('id')
@@ -170,19 +164,17 @@ class Pending extends Component
     /**
      * Anlagen der aufgeklappten Nachricht, Vorschläge zuerst.
      *
-     * @return Collection<int, BeaMessageFile>
+     * @return Collection<int, BeaFile>
      */
     #[Computed]
     public function expandedFiles(): Collection
     {
-        if (! $this->expanded) {
-            return new Collection;
+        $message = $this->expanded ? BeaMessage::find($this->expanded) : null;
+        if (! $message) {
+            return collect();
         }
 
-        return BeaMessageFile::query()
-            ->where('bea_message_id', $this->expanded)
-            ->where('role', BeaMessageFile::ROLE_ATTACHMENT)
-            ->get()
+        return $message->attachmentFiles()
             ->sortBy([['suggested', 'desc'], ['name', 'asc']])
             ->values();
     }
@@ -196,7 +188,7 @@ class Pending extends Component
         // Erste vorgeschlagene PDF gleich anzeigen
         if ($this->expanded) {
             $this->previewFile = $this->expandedFiles
-                ->first(fn (BeaMessageFile $row) => $row->suggested && $this->isPreviewable($row))?->id;
+                ->first(fn (BeaFile $row) => $row->suggested && $this->isPreviewable($row))?->id;
         }
     }
 
@@ -213,7 +205,7 @@ class Pending extends Component
     /**
      * Im Browser darstellbar (PDF, Bilder, Text) – sonst nur Download.
      */
-    public function isPreviewable(BeaMessageFile $row): bool
+    public function isPreviewable(BeaFile $row): bool
     {
         return in_array(strtolower(pathinfo((string) $row->name, PATHINFO_EXTENSION)), ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'txt'], true);
     }
@@ -266,22 +258,22 @@ class Pending extends Component
             return;
         }
 
-        $models = $this->contextModels();
+        $types = app(AssignTypes::class);
+        $target = $this->modelId ? $types->resolve($this->modelType, $this->modelId) : null;
+        $context = $this->contextModels();
         $messages = BeaMessage::query()
             ->whereKey(array_map('intval', $this->selectedMessages))
             ->where('status', BeaMessage::STATUS_INGESTED)
-            ->with('messageFiles')
             ->get();
 
         $accepted = [];
         $errors = [];
         foreach ($messages as $message) {
-            $fileIds = $message->messageFiles
-                ->filter(fn (BeaMessageFile $row) => $row->isSelectable() && $row->suggested)
+            $fileIds = $message->suggestedFiles()
                 ->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
 
             try {
-                $result = $importer->accept($message, $fileIds, $models);
+                $result = $importer->accept($message, $fileIds, $context, target: $target);
                 $accepted[] = '#'.$message->id.' ('.count($result['files']).' Datei(en))';
                 if ($result['failed'] !== []) {
                     $errors[] = ($message->bea_id ?? '#'.$message->id).': nicht übernommen: '.implode(', ', $result['failed']);
@@ -323,10 +315,8 @@ class Pending extends Component
     }
 
     /**
-     * Modelle, denen die Nachrichten zugeordnet werden: das aufrufende Modell
-     * und die in bea.assign.context genannten Schlüssel aus data
-     * (z. B. Register_ID → Akte). Nicht konfigurierte Modelle (wie der
-     * Standard App\Models\User) bleiben außen vor.
+     * Kontext für die Anwendung: die in bea.assign.context genannten
+     * Schlüssel aus data (z. B. Register_ID → Akte).
      *
      * @return list<Model>
      */
@@ -334,10 +324,6 @@ class Pending extends Component
     {
         $types = app(AssignTypes::class);
         $models = [];
-
-        if ($this->modelId && ($model = $types->resolve($this->modelType, $this->modelId))) {
-            $models[] = $model;
-        }
 
         foreach ((array) config('bea.assign.context', []) as $key => $target) {
             $value = $this->data[$key] ?? null;

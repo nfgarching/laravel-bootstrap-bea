@@ -3,7 +3,14 @@
 `$event->data` (und `BeaMessage::$data`) enthält alles, was beim Einlesen aus
 der Nachricht ausgelesen wurde. Dateien im Files-Package gibt es zu diesem
 Zeitpunkt noch nicht – sie entstehen erst bei der Übernahme; welche Datei
-übernommen wurde, steht in `bea_message_files` (`file_id`, `accepted_at`).
+übernommen wurde, erkennt das Package an den Files der Nachricht
+(`model_type` = `BeaMessage`, `custom_properties.bea.zip_path`).
+
+Zusätzlich steht in `data.files` jede Datei der ZIP mit `role`
+(`attachment`/`signature`/`meta`), `kind`, `name`, `zip_path`,
+`display_name`, `document_class`, `category`, `suggested`, `signed`,
+`signature_name`, `signature_of`, `sha256`, `size` und `vhn_covered` – das
+Package liest sie über `BeaMessage::messageFiles()` als `Data\BeaFile`.
 
 Beispiel aus der synthetischen Testnachricht (`tests/Fixtures`, frei
 erfundene Daten):

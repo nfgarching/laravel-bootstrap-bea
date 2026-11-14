@@ -8,8 +8,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
+use Nfgarching\Bea\Data\BeaFile;
 use Nfgarching\Bea\Models\BeaMessage;
-use Nfgarching\Bea\Models\BeaMessageFile;
 use Nfgarching\Bea\Parser\BeaArchive as ZipReader;
 use Nfgarching\Bea\Services\AssignTypes;
 use Nfgarching\Bea\Services\BeaIntegrityChecker;
@@ -65,10 +65,9 @@ class BeaController
         $this->defaultSort($request);
 
         $query = $this->filteredQuery($request)
-            ->with(['assignments', 'latestVerification'])
+            ->with(['latestVerification'])
             ->withCount([
-                'messageFiles as attachments_count' => fn ($q) => $q->where('role', BeaMessageFile::ROLE_ATTACHMENT),
-                'messageFiles as accepted_count' => fn ($q) => $q->whereNotNull('accepted_at'),
+                'files as accepted_count',
             ]);
 
         return view('bea::pages.index', [
@@ -90,14 +89,14 @@ class BeaController
     public function show(BeaMessage $message, Request $request, AssignTypes $types, BeaStorage $storage): View
     {
         $this->defaultSort($request);
-        $message->load(['archive', 'messageFiles.file', 'assignments', 'verifications']);
+        $message->load('verifications');
 
         return view('bea::pages.show', [
             'message' => $message,
             'navigation' => $this->getNavigationData($message, $request, $this->filteredQuery($request)),
             'request' => $request,
-            'files' => $message->messageFiles->sortBy([['role', 'asc'], ['name', 'asc']])->values(),
-            'assignments' => $message->assignments->map(fn ($a) => $types->label($a->assignable_type, $a->assignable_id)),
+            'files' => $message->messageFiles()->sortBy([['role', 'asc'], ['name', 'asc']])->values(),
+            'assignment' => $message->model_type && $message->model_id ? $types->label($message->model_type, $message->model_id) : null,
             'archiveExists' => $message->archive ? $storage->exists($message->archive) : false,
             'tab' => $request->string('tab', 'nachricht')->toString(),
         ]);
@@ -116,8 +115,8 @@ class BeaController
         return BeaMessage::query()
             ->when($request->jahr, fn ($q, $v) => $q->whereYear('dated_at', (int) $v))
             ->when(isset(self::DIRECTION_OPTIONS[$request->input('richtung')]), fn ($q) => $q->where('direction', $request->input('richtung')))
-            ->when($request->input('assigned') === '1', fn ($q) => $q->has('assignments'))
-            ->when($request->input('assigned') === '0', fn ($q) => $q->doesntHave('assignments'))
+            ->when($request->input('assigned') === '1', fn ($q) => $q->assigned())
+            ->when($request->input('assigned') === '0', fn ($q) => $q->assigned(false))
             ->when($request->input('check') === 'problem', fn ($q) => $q->where(fn ($w) => $w
                 ->where('integrity', '!=', 'complete')
                 ->orWhereNotIn('vhn_signature', ['valid', 'signature_ok'])
@@ -171,13 +170,10 @@ class BeaController
      * Übernehmen). Ausgeliefert wird nur, was noch der beim Einlesen
      * erfassten Prüfsumme entspricht.
      */
-    public function file(BeaMessage $message, BeaMessageFile $messageFile, BeaStorage $storage, ZipReader $zip): Response
+    public function file(BeaMessage $message, int $messageFile, BeaStorage $storage, ZipReader $zip): Response
     {
-        abort_unless(
-            (int) $messageFile->bea_message_id === (int) $message->id
-                && $messageFile->role === BeaMessageFile::ROLE_ATTACHMENT,
-            404,
-        );
+        $messageFile = $message->messageFile($messageFile);
+        abort_unless($messageFile instanceof BeaFile && $messageFile->isAttachment(), 404);
 
         $archive = $message->archive;
         abort_unless($archive && $storage->exists($archive), 404, 'Original-ZIP nicht gefunden.');

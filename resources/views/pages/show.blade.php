@@ -75,16 +75,11 @@
                 <div class="card mb-3">
                     <div class="card-header">Zuordnung</div>
                     <div class="card-body small">
-                        @forelse ($assignments as $index => $label)
-                            <div>
-                                @if ($index === 0)
-                                    <i class="bi bi-star-fill text-warning" title="Hauptzuordnung"></i>
-                                @endif
-                                {{ $label }}
-                            </div>
-                        @empty
+                        @if ($assignment)
+                            <div>{{ $assignment }}</div>
+                        @else
                             <span class="text-muted">Nicht zugeordnet.</span>
-                        @endforelse
+                        @endif
                     </div>
                 </div>
                 <div class="card mb-3">
@@ -180,11 +175,9 @@
                                 </td>
                                 <td class="text-nowrap">
                                     @if ($row->isAccepted())
-                                        {{ $date($row->accepted_at) }}
-                                        @if ($row->file && Route::has('files.show'))
-                                            <a href="{{ route('files.show', $row->file) }}" title="Datei #{{ $row->file_id }} öffnen"><i class="bi bi-box-arrow-up-right"></i></a>
-                                        @elseif (! $row->file)
-                                            <span class="text-muted" title="Die Datei wurde im Files-Package gelöscht">(gelöscht)</span>
+                                        {{ $date($row->acceptedAt()) }}
+                                        @if (Route::has('files.show'))
+                                            <a href="{{ route('files.show', $row->file) }}" title="Datei #{{ $row->fileId() }} öffnen"><i class="bi bi-box-arrow-up-right"></i></a>
                                         @endif
                                     @elseif ($row->role === 'attachment')
                                         <span class="text-muted">nicht übernommen</span>

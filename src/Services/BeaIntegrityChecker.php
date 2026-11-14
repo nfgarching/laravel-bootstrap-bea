@@ -49,7 +49,7 @@ class BeaIntegrityChecker
 
             $files = [];
             $filesIntact = true;
-            foreach ($message->messageFiles as $row) {
+            foreach ($message->forgetMessageFiles()->messageFiles() as $row) {
                 $path = $work.'/'.$row->zip_path;
                 $actual = is_file($path) ? (string) hash_file('sha256', $path) : null;
                 $ok = $actual !== null && ($row->sha256 === null || hash_equals($row->sha256, $actual));

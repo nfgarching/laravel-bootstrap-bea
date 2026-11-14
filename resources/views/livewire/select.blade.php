@@ -36,30 +36,26 @@
     <div class="card mb-3">
         <div class="card-header"><i class="bi bi-link-45deg"></i> Zuordnung</div>
         <div class="card-body">
-            <div class="d-flex flex-wrap gap-2 mb-2">
-                @foreach ($assigned as $index => $entry)
+            <div class="mb-2 small">
+                <span class="text-muted">Zugeordnet:</span>
+                @if ($assigned)
                     <span class="badge text-bg-success d-inline-flex align-items-center gap-1 fs-6 fw-normal">
-                        @if ($index === 0)
-                            <i class="bi bi-star-fill" title="Hauptzuordnung"></i>
-                        @endif
-                        {{ $entry['label'] }}
+                        {{ $assigned }}
                         <button type="button" class="btn-close btn-close-white" style="font-size: .6rem"
-                            wire:click="removeAssignment({{ $entry['id'] }})" title="Zuordnung entfernen"></button>
+                            wire:click="removeAssignment" title="Zuordnung entfernen"></button>
                     </span>
-                @endforeach
+                @else
+                    <span class="text-muted">noch nichts – die Anwendung legt beim Übernehmen das Ziel an (z. B. ein Dokument).</span>
+                @endif
+            </div>
+            <div class="d-flex flex-wrap gap-2 mb-2">
                 @foreach ($pending as $index => $entry)
                     <span class="badge text-bg-primary d-inline-flex align-items-center gap-1 fs-6 fw-normal">
-                        @if ($assigned->isEmpty() && $index === 0)
-                            <i class="bi bi-star-fill" title="Hauptzuordnung"></i>
-                        @endif
                         {{ $entry['label'] }}
                         <button type="button" class="btn-close btn-close-white" style="font-size: .6rem"
                             wire:click="removePending({{ $index }})" title="Vorschlag entfernen"></button>
                     </span>
                 @endforeach
-                @if ($assigned->isEmpty() && empty($pending))
-                    <span class="text-muted small">Noch nicht zugeordnet. Ohne Zuordnung bleiben die übernommenen Dateien bei der beA-Nachricht und werden erst mit der ersten Zuordnung übergeben.</span>
-                @endif
             </div>
 
             @if (empty($this->types))
@@ -86,7 +82,7 @@
                         </div>
                     @endforeach
                 </div>
-                <div class="form-text">Die erste Zuordnung (Stern) ist die Hauptzuordnung: an sie werden die Dateien übergeben.</div>
+                <div class="form-text">Die gewählten Einträge (blau) werden beim Übernehmen an die Anwendung übergeben, z. B. Akte und Name für das neue Dokument.</div>
             @endif
         </div>
     </div>
@@ -117,6 +113,8 @@
                             <td>
                                 @if ($row->isAccepted())
                                     <i class="bi bi-check-circle-fill text-success" title="bereits übernommen"></i>
+                                @elseif ($row->isExcluded())
+                                    <i class="bi bi-dash-circle text-muted" title="wird nicht übernommen (bea.exclude_extensions)"></i>
                                 @else
                                     <input type="checkbox" class="form-check-input" value="{{ $row->id }}" wire:model="selected" id="row-{{ $row->id }}">
                                 @endif
@@ -172,7 +170,7 @@
                 <a class="btn btn-outline-secondary" href="{{ route('bea.show', $message) }}">Zur Nachricht</a>
             </div>
             @if ($selectable->isEmpty())
-                <div class="form-text">Alle Anhänge sind bereits übernommen – „Übernehmen“ speichert nur noch die Zuordnung.</div>
+                <div class="form-text">Alle Anhänge sind bereits übernommen – „Übernehmen“ übergibt nur noch die Auswahl.</div>
             @endif
         </div>
     </div>

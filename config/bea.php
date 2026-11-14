@@ -84,6 +84,13 @@ return [
         'fallback_extensions' => ['pdf'],
     ],
 
+    /*
+    | Dateiendungen, die nie in das Files-Package übernommen werden (auch nicht
+    | bei Vorschlag oder Auswahl). Sie bleiben als Begleitdatei in der ZIP und
+    | stehen im Reiter „Dateien“ der Nachricht.
+    */
+    'exclude_extensions' => array_values(array_filter(array_map('trim', explode(',', (string) env('BEA_EXCLUDE_EXTENSIONS', 'xml'))))),
+
     'categories' => [
         'verfuegung' => 'Verfügung/Entscheidung',
         'schriftsatz' => 'Schriftsatz',
@@ -96,9 +103,14 @@ return [
     |--------------------------------------------------------------------------
     | Zuordnung bei der Übernahme
     |--------------------------------------------------------------------------
-    | Modelle der Anwendung, denen eine Nachricht zugeordnet werden kann. Der
-    | erste Eintrag einer Nachricht ist die Hauptzuordnung: an ihn werden die
-    | übernommenen Dateien per NewFiles-Event übergeben.
+    | Eine Nachricht hat genau eine Zuordnung (bea_messages.model): beim
+    | Einlesen den User, nach der Übernahme das Modell, das die Anwendung
+    | anlegt bzw. aus dem heraus übernommen wird (z. B. ein Dokument). An sie
+    | gehen die übernommenen Dateien (NewFiles-Event).
+    |
+    | Die hier eingetragenen Modelle lassen sich in bea.select suchen und
+    | wählen; sie gehen als Kontext ($context) mit dem Event BeaFilesAccepted
+    | an die Anwendung, z. B. Akte und Name für ein neues Dokument.
     |
     |   'akte' => [
     |       'label' => 'Akte',
@@ -119,14 +131,15 @@ return [
         // Muster, mit dem das eigene Aktenzeichen aus dem Freitext des Absenders gelesen wird
         'aktenzeichen_pattern' => '#\d{2}/\d{3,5}#',
         // Übernehmen im Modal/Popup (bea.pending): Schlüssel aus „data“ des
-        // Aufrufs, die zusätzlich zugeordnet werden, z. B.
+        // Aufrufs, die als Kontext mitgegeben werden, z. B.
         //   'Register_ID' => ['type' => 'akte', 'column' => 'ID'],
         'context' => [],
     ],
 
     /*
-    | Aufrufkontext ohne model_type (wie files.default_model_type): Nachrichten
-    | werden keinem weiteren Modell zugeordnet.
+    | Morph-Typ des Users (wie files.default_model_type): Aufrufkontext ohne
+    | model_type; eine Zuordnung zu diesem Typ gilt nicht als Zuordnung zu
+    | einem Modell der Anwendung (Dateien bleiben bei der Nachricht).
     */
     'default_model_type' => env('BEA_DEFAULT_MODEL_TYPE', 'App\\Models\\User'),
 

@@ -7,26 +7,30 @@ use Illuminate\View\View;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
+use Nfgarching\Bea\Data\BeaFile;
 use Nfgarching\Bea\Models\BeaMessage;
-use Nfgarching\Bea\Models\BeaMessageFile;
 use Nfgarching\Bea\Services\AssignTypes;
 use Nfgarching\Bea\Services\BeaImporter;
 
 /**
  * Übernahme einer eingelesenen Nachricht: Dateien auswählen (vorbelegt mit
- * den Vorschlägen), Akte und Namen zuordnen, an das Files-Package übergeben.
+ * den Vorschlägen), Akte und Namen wählen, an das Files-Package übergeben.
+ *
+ * Akte, Namen … gehen nur als Kontext an die Anwendung (Event
+ * BeaFilesAccepted); gespeichert wird allein die Zuordnung der Nachricht
+ * (bea_messages.model), die die Anwendung beim Übernehmen setzt.
  */
 class Select extends Component
 {
     #[Locked]
     public int $messageId;
 
-    /** @var list<int|string> IDs aus bea_message_files */
+    /** @var list<int|string> BeaFile::$id aus data.files */
     public array $selected = [];
 
     public string $subject = '';
 
-    /** @var list<array{type: string, id: int|string, label: string}> noch nicht gespeicherte Zuordnungen */
+    /** @var list<array{type: string, id: int|string, label: string}> Kontext für die Übernahme (Akte, Namen …) */
     public array $pending = [];
 
     /** @var array<string, string> Suchbegriff je Typ */
@@ -40,12 +44,11 @@ class Select extends Component
         $message = $this->message;
 
         $this->subject = (string) $message->subject;
-        $this->selected = $message->messageFiles
-            ->filter(fn (BeaMessageFile $row) => $row->isSelectable() && $row->suggested)
+        $this->selected = $message->suggestedFiles()
             ->pluck('id')->map(fn ($id) => (string) $id)->values()->all();
 
         // Vorschlag anhand des Aktenzeichens, sofern noch nichts zugeordnet ist
-        if ($message->assignments->isEmpty()) {
+        if (! $message->isAssigned()) {
             $this->pending = app(AssignTypes::class)->suggestionsFor($message);
         }
     }
@@ -53,17 +56,16 @@ class Select extends Component
     #[Computed]
     public function message(): BeaMessage
     {
-        return BeaMessage::with(['messageFiles.file', 'assignments', 'archive'])->findOrFail($this->messageId);
+        return BeaMessage::findOrFail($this->messageId);
     }
 
     /**
-     * @return Collection<int, BeaMessageFile>
+     * @return Collection<int, BeaFile>
      */
     #[Computed]
     public function rows(): Collection
     {
-        return $this->message->messageFiles
-            ->where('role', BeaMessageFile::ROLE_ATTACHMENT)
+        return $this->message->attachmentFiles()
             ->sortBy([['suggested', 'desc'], ['name', 'asc']])
             ->values();
     }
@@ -116,16 +118,16 @@ class Select extends Component
         $this->pending = array_values($this->pending);
     }
 
-    public function removeAssignment(int $assignmentId): void
+    public function removeAssignment(): void
     {
-        $this->message->assignments()->whereKey($assignmentId)->delete();
+        $this->message->unassign();
         unset($this->message);
     }
 
     public function selectSuggested(): void
     {
         $this->selected = $this->rows
-            ->filter(fn (BeaMessageFile $row) => $row->isSelectable() && $row->suggested)
+            ->filter(fn (BeaFile $row) => $row->isSelectable() && $row->suggested)
             ->pluck('id')->map(fn ($id) => (string) $id)->values()->all();
     }
 
@@ -173,11 +175,10 @@ class Select extends Component
     {
         $types = app(AssignTypes::class);
 
+        $message = $this->message;
+
         return view('bea::livewire.select', [
-            'assigned' => $this->message->assignments->map(fn ($a) => [
-                'id' => $a->id,
-                'label' => $types->label($a->assignable_type, $a->assignable_id),
-            ]),
+            'assigned' => $message->isAssigned() ? $types->label($message->model_type, $message->model_id) : null,
         ]);
     }
 }

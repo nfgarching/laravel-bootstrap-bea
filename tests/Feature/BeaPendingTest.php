@@ -57,7 +57,7 @@ test('das Popup listet nur nicht übernommene Nachrichten', function () {
 });
 
 test('Standard User: übernimmt die vorgeschlagenen Dateien ohne Zuordnung', function () {
-    $suggested = $this->message->messageFiles->where('suggested', true)->count();
+    $suggested = $this->message->messageFiles()->where('suggested', true)->count();
 
     Livewire::test(Pending::class)
         ->assertSet('modelType', 'App\\Models\\User')
@@ -69,7 +69,8 @@ test('Standard User: übernimmt die vorgeschlagenen Dateien ohne Zuordnung', fun
 
     $this->message->refresh();
     expect($this->message->status)->toBe(BeaMessage::STATUS_ACCEPTED)
-        ->and($this->message->assignments)->toHaveCount(0)
+        ->and($this->message->model->is($this->user))->toBeTrue()
+        ->and($this->message->isAssigned())->toBeFalse()
         ->and(File::count())->toBe($suggested);
 
     Event::assertDispatched(BeaFilesAccepted::class);
@@ -82,16 +83,18 @@ test('aus einem Modell heraus wird die Nachricht ihm zugeordnet', function () {
         ->set('selectedMessages', [(string) $this->message->id])
         ->call('importMessages');
 
-    expect($this->message->fresh()->primaryAssignment()->assignable->is($this->user))->toBeTrue();
+    expect($this->message->fresh()->model->is($this->user))->toBeTrue();
 });
 
-test('Kontext aus data wird über bea.assign.context zugeordnet', function () {
+test('Kontext aus data geht über bea.assign.context an das Event', function () {
     Livewire::test(Pending::class)
         ->set('data', ['user_email' => $this->user->email])
         ->set('selectedMessages', [(string) $this->message->id])
         ->call('importMessages');
 
-    expect($this->message->fresh()->primaryAssignment()->assignable->is($this->user))->toBeTrue();
+    Event::assertDispatched(BeaFilesAccepted::class, fn (BeaFilesAccepted $event) => $event->context === [
+        ['type' => $this->user->getMorphClass(), 'id' => $this->user->id],
+    ]);
 });
 
 test('das Modal fragt erst nach dem Öffnen ab und übernimmt den Kontext aus dem Event', function () {
@@ -117,7 +120,7 @@ test('die Modal-Registrierung bindet die Komponente ein', function () {
 });
 
 test('eine Anlage wird zur Vorschau direkt aus der Original-ZIP ausgeliefert', function () {
-    $row = $this->message->messageFiles->where('role', 'attachment')->firstWhere('suggested', true);
+    $row = $this->message->messageFiles()->where('role', 'attachment')->firstWhere('suggested', true);
 
     $response = $this->get(route('bea.file', ['message' => $this->message->id, 'messageFile' => $row->id]))
         ->assertOk()
@@ -129,24 +132,24 @@ test('eine Anlage wird zur Vorschau direkt aus der Original-ZIP ausgeliefert', f
 });
 
 test('die Vorschau liefert nur Anlagen der eigenen Nachricht', function () {
-    $meta = $this->message->messageFiles->firstWhere('role', 'meta');
+    $meta = $this->message->messageFiles()->firstWhere('role', 'meta');
     $this->get(route('bea.file', ['message' => $this->message->id, 'messageFile' => $meta->id]))->assertNotFound();
 
-    $other = $this->message->replicate()->fill(['bea_id' => '100000002']);
+    $other = $this->message->replicate()->fill(['bea_id' => '100000002', 'data' => ['files' => []]]);
     $other->save();
-    $row = $this->message->messageFiles->firstWhere('role', 'attachment');
+    $row = $this->message->messageFiles()->firstWhere('role', 'attachment');
     $this->get(route('bea.file', ['message' => $other->id, 'messageFile' => $row->id]))->assertNotFound();
 });
 
 test('eine veränderte Anlage wird nicht angezeigt', function () {
-    $row = $this->message->messageFiles->firstWhere('role', 'attachment');
-    $row->update(['sha256' => str_repeat('0', 64)]);
+    $row = $this->message->messageFiles()->firstWhere('role', 'attachment');
+    beaUpdateFile($this->message, $row->name, ['sha256' => str_repeat('0', 64)]);
 
     $this->get(route('bea.file', ['message' => $this->message->id, 'messageFile' => $row->id]))->assertStatus(409);
 });
 
 test('Aufklappen, Vorschau wählen und schließen', function () {
-    $attachments = $this->message->messageFiles->where('role', 'attachment');
+    $attachments = $this->message->messageFiles()->where('role', 'attachment');
     $other = $attachments->firstWhere('suggested', false) ?? $attachments->last();
 
     $component = Livewire::test(Pending::class)

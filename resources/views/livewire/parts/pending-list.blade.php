@@ -94,16 +94,16 @@
                             · Az. {{ $item->isOutgoing() ? 'Empfänger' : 'Absender' }} {{ $item->aktenzeichen_absender }}
                         @endif
                     </div>
-                    @foreach ($item->assignments as $assignment)
+                    @if ($item->isAssigned())
                         <span class="badge text-bg-light border">
                             <i class="bi bi-link-45deg"></i>
-                            {{ $types->label($assignment->assignable_type, $assignment->assignable_id) }}
+                            {{ $types->label($item->model_type, $item->model_id) }}
                         </span>
-                    @endforeach
+                    @endif
                 </td>
                 <td>@include('bea::parts.badges', ['item' => $item])</td>
                 <td class="text-end text-nowrap">
-                    <span class="badge bg-primary" title="vorgeschlagen">{{ $item->suggested_count }}</span>
+                    <span class="badge bg-primary" title="vorgeschlagen">{{ $item->suggestedFiles()->count() }}</span>
                     <span class="badge bg-secondary" title="Anlagen insgesamt">{{ $item->attachments_count }}</span>
                 </td>
                 <td class="text-nowrap" width="1%">

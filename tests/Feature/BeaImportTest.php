@@ -8,7 +8,6 @@ use Illuminate\Support\Facades\Storage;
 use Nfgarching\Bea\Events\BeaFilesAccepted;
 use Nfgarching\Bea\Events\BeaMessageImported;
 use Nfgarching\Bea\Exceptions\InvalidBeaArchive;
-use Nfgarching\Bea\Models\BeaArchive;
 use Nfgarching\Bea\Models\BeaMessage;
 use Nfgarching\Bea\Services\BeaImporter;
 use Nfgarching\Bea\Services\BeaIntegrityChecker;
@@ -57,7 +56,7 @@ test('Einlesen legt die ZIP auf der Disk beas ab und erfasst alle Dateien, aber 
         ->and($archive->sha256)->toBe(hash('sha256', Storage::disk('beas')->get($archive->path)))
         ->and($archive->path)->toStartWith('archive/'.date('Y').'/');
 
-    $rows = $message->messageFiles->keyBy('name');
+    $rows = $message->messageFiles()->keyBy('name');
     expect($rows)->toHaveCount(8) // 2 Anhänge, 1 Signatur, 5 technische Dateien
         ->and($rows['Ladung.pdf']->role)->toBe('attachment')
         ->and($rows['Ladung.pdf']->category)->toBe('verfuegung')
@@ -90,27 +89,29 @@ test('eine bereits eingelesene Nachricht wird übersprungen und die ZIP nicht do
         ->and($second['skipped'])->toBe(['100000001'])
         ->and($second['archive'])->toBeNull()
         ->and(BeaMessage::count())->toBe(1)
-        ->and(BeaArchive::count())->toBe(1);
+        ->and(Storage::disk('beas')->allFiles('archive'))->toHaveCount(1);
     Event::assertDispatchedTimes(BeaMessageImported::class, 1);
 });
 
-test('Übernahme übergibt nur die gewählten Dateien an die Hauptzuordnung', function () {
+test('Übernahme legt nur die gewählten Dateien bei der Nachricht ab, Akte und Namen als Kontext', function () {
     $message = ingestFixture();
+    // Stellvertreter für ein Modell der Anwendung (z. B. ein Dokument)
+    $target = $message->latestVerification;
     $akte = User::factory()->create();
     $name = User::factory()->create();
-    $ladung = $message->messageFiles->firstWhere('name', 'Ladung.pdf');
-    $signature = $message->messageFiles->firstWhere('name', 'Ladung.pdf.p7s');
+    $ladung = $message->messageFiles()->firstWhere('name', 'Ladung.pdf');
+    $signature = $message->messageFiles()->firstWhere('name', 'Ladung.pdf.p7s');
 
     // Die Signaturdatei wird auch dann nicht übernommen, wenn ihre ID mitkommt
-    $result = app(BeaImporter::class)->accept($message, [$ladung->id, $signature->id], [$akte, $name]);
+    $result = app(BeaImporter::class)->accept($message, [$ladung->id, $signature->id], [$akte, $name], target: $target);
 
     expect($result['files'])->toHaveCount(1)->and($result['failed'])->toBe([]);
 
     $file = $result['files'][0]->fresh();
     expect($file->name)->toBe('Ladung zum Termin.pdf')
         ->and($file->collection_name)->toBe('bea')
-        ->and($file->model_type)->toBe($akte->getMorphClass())
-        ->and((int) $file->model_id)->toBe($akte->id)
+        ->and($file->model_type)->toBe($message->getMorphClass())
+        ->and((int) $file->model_id)->toBe($message->id)
         ->and($file->isOriginalDocument())->toBeTrue()
         ->and($file->isLocked())->toBeTrue()
         ->and($file->custom_properties['bea']['signed'])->toBeTrue()
@@ -120,43 +121,44 @@ test('Übernahme übergibt nur die gewählten Dateien an die Hauptzuordnung', fu
 
     $message->refresh();
     expect($message->status)->toBe('accepted')
-        ->and($message->assignments)->toHaveCount(2)
-        ->and($message->primaryAssignment()->assignable->is($akte))->toBeTrue()
-        ->and($ladung->fresh()->isAccepted())->toBeTrue()
-        ->and($signature->fresh()->file_id)->toBeNull()
-        ->and($message->messageFiles->firstWhere('name', 'Klageerwiderung.pdf')->isAccepted())->toBeFalse();
+        ->and($message->model->is($target))->toBeTrue()
+        ->and($message->messageFiles()->firstWhere('name', 'Ladung.pdf')->fileId())->toBe($file->id)
+        ->and($message->messageFiles()->firstWhere('name', 'Ladung.pdf.p7s')->isAccepted())->toBeFalse()
+        ->and($message->messageFiles()->firstWhere('name', 'Klageerwiderung.pdf')->isAccepted())->toBeFalse()
+        ->and($file->custom_properties['bea']['zip_path'])->toBe($ladung->zip_path);
 
-    Event::assertDispatched(NewFiles::class, fn (NewFiles $event) => $event->fileIds === [$file->id]
-        && $event->model_type === $akte->getMorphClass()
-        && $event->model_id === $akte->id
-        && $event->subject === 'Ladung zum Termin'
-        && $event->data['bea_id'] === '100000001');
+    Event::assertNotDispatched(NewFiles::class);
     Event::assertDispatched(BeaFilesAccepted::class, fn (BeaFilesAccepted $event) => $event->fileIds === [$file->id]
-        && count($event->assignments) === 2);
+        && $event->subject === 'Ladung zum Termin'
+        && $event->context === [
+            ['type' => $akte->getMorphClass(), 'id' => $akte->id],
+            ['type' => $name->getMorphClass(), 'id' => $name->id],
+        ]);
 });
 
-test('ohne Zuordnung bleiben die Dateien bei der Nachricht und werden mit der ersten Zuordnung nachgereicht', function () {
+test('die Files bleiben auch nach einer Zuordnung bei der Nachricht', function () {
     $message = ingestFixture();
-    $erwiderung = $message->messageFiles->firstWhere('name', 'Klageerwiderung.pdf');
+    $erwiderung = $message->messageFiles()->firstWhere('name', 'Klageerwiderung.pdf');
 
     $file = app(BeaImporter::class)->accept($message, [$erwiderung->id])['files'][0];
 
     expect($file->fresh()->model_type)->toBe($message->getMorphClass())
         ->and($file->fresh()->isLocked())->toBeFalse();
+
+    $target = $message->latestVerification;
+    app(BeaImporter::class)->accept($message->fresh(), [], target: $target);
+
+    expect($message->fresh()->model->is($target))->toBeTrue()
+        ->and($file->fresh()->model_type)->toBe($message->getMorphClass())
+        ->and((int) $file->fresh()->model_id)->toBe($message->id);
     Event::assertNotDispatched(NewFiles::class);
-
-    $akte = User::factory()->create();
-    app(BeaImporter::class)->accept($message->fresh(), [], [$akte]);
-
-    expect($file->fresh()->model_type)->toBe($akte->getMorphClass());
-    Event::assertDispatched(NewFiles::class, fn (NewFiles $event) => $event->fileIds === [$file->id]);
 });
 
 test('Übernahme bricht ab, wenn die Original-ZIP verändert wurde', function () {
     $message = ingestFixture();
     Storage::disk('beas')->put($message->archive->path, 'manipuliert');
 
-    app(BeaImporter::class)->accept($message, $message->messageFiles->where('role', 'attachment')->pluck('id')->all());
+    app(BeaImporter::class)->accept($message, $message->messageFiles()->where('role', 'attachment')->pluck('id')->all());
 })->throws(InvalidBeaArchive::class);
 
 test('die erneute Prüfung hält ZIP, Dateien und Herkunftsnachweis im Verlauf fest', function () {
@@ -219,4 +221,52 @@ test('Archiv und failed unterhalb des Eingangs werden nicht als Eingang behandel
         ->and($storage->inboxFiles())->toBe([])
         ->and($storage->isInboxFile($archived))->toBeFalse()
         ->and($storage->isInboxFile('eingang/nachricht.zip'))->toBeTrue();
+});
+
+test('xml-Dateien und alle technischen Prüfprotokolle werden nie übernommen', function () {
+    $zip = beaFixtureZip([
+        'technisches_pruefprotokoll_01_Ladung.pdf.xml' => '<protokoll/>',
+        'technisches_pruefprotokoll_vhn.xml.xml' => '<protokoll/>',
+        'Strukturdaten.xml' => '<daten/>',
+    ]);
+    $message = app(BeaImporter::class)->ingest($zip, 'Nachricht_100000001.zip')['imported'][0];
+
+    $rows = $message->messageFiles()->keyBy('name');
+    expect($rows['technisches_pruefprotokoll_01_Ladung.pdf.xml']->role)->toBe('meta')
+        ->and($rows['technisches_pruefprotokoll_vhn.xml.xml']->role)->toBe('meta')
+        ->and($rows['technisches_pruefprotokoll_vhn.xml.xml']->kind)->toBe('technical_report')
+        ->and($rows['Strukturdaten.xml']->role)->toBe('meta')
+        ->and($rows['Strukturdaten.xml']->kind)->toBe('excluded')
+        ->and($rows['Strukturdaten.xml']->suggested)->toBeFalse();
+
+    // Auch eine früher als Anhang eingelesene xml-Datei wird nicht übernommen
+    beaUpdateFile($message, 'Strukturdaten.xml', ['role' => 'attachment', 'kind' => null, 'suggested' => true]);
+    $result = app(BeaImporter::class)->accept($message->fresh(), $message->messageFiles()->where('role', 'attachment')->pluck('id')->all());
+
+    expect(collect($result['files'])->map(fn (File $f) => $f->name)->filter(fn ($n) => str_ends_with(strtolower($n), '.xml')))->toBeEmpty()
+        ->and($message->fresh()->messageFiles()->firstWhere('name', 'Strukturdaten.xml')->isAccepted())->toBeFalse();
+});
+
+test('eine Sammel-ZIP mit einer ZIP je Nachricht liest jede Nachricht mit eigenem Original ein', function () {
+    $zip = beaFixtureZipCollection([
+        'Nachricht_100000001.zip' => beaFixtureZip(),
+        'Nachricht_100000009.zip' => beaFixtureZipOutgoing(),
+        'kaputt.zip' => tap(tempnam(sys_get_temp_dir(), 'bea'), fn ($p) => file_put_contents($p, 'keine zip')),
+    ]);
+
+    $result = app(BeaImporter::class)->ingest($zip, 'Posteingang.zip');
+
+    expect(collect($result['imported'])->pluck('bea_id')->sort()->values()->all())->toBe(['100000001', '100000009'])
+        ->and($result['archives'])->toHaveCount(2)
+        ->and(BeaMessage::pluck('archive_name')->sort()->values()->all())->toBe(['Nachricht_100000001.zip', 'Nachricht_100000009.zip'])
+        ->and(collect($result['warnings'])->contains(fn ($w) => str_contains($w, 'kaputt.zip')))->toBeTrue();
+
+    // Jede Nachricht lässt sich aus ihrem eigenen Original übernehmen
+    $message = BeaMessage::where('bea_id', '100000009')->sole();
+    $files = app(BeaImporter::class)->accept($message, $message->suggestedFiles()->pluck('id')->all())['files'];
+    expect($files)->not->toBeEmpty();
+
+    // Erneut eingelesen: alles bekannt
+    $again = app(BeaImporter::class)->ingest($zip, 'Posteingang.zip');
+    expect($again['imported'])->toBe([])->and($again['skipped'])->toHaveCount(2);
 });

@@ -83,7 +83,7 @@ class ImportBea extends Command
         }
 
         foreach ($result['imported'] as $message) {
-            $attachments = $message->messageFiles->where('role', 'attachment');
+            $attachments = $message->attachmentFiles();
             $this->line(sprintf(
                 '<info>✓</info> %s  beA %s  AZ %s  %s  (%d Datei(en), %d vorgeschlagen, VHN %s)',
                 $name,

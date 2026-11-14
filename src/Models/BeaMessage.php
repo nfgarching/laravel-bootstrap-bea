@@ -3,16 +3,22 @@
 namespace Nfgarching\Bea\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Collection as BaseCollection;
+use Nfgarching\Bea\Data\BeaFile;
+use Nfgarching\Bea\Data\BeaZip;
 use Nfgarching\Files\Models\File;
 
 /**
  * Eingelesene beA-Nachricht. Die vollständigen ausgelesenen Daten stehen in
- * data (siehe BeaMessageData::toArray()).
+ * data (siehe BeaMessageData::toArray()), die Dateien der ZIP in data.files
+ * (messageFiles()). Übernommene Dateien sind Files der Nachricht (files()).
  *
  * status: ingested (eingelesen, noch nichts übernommen) | accepted (Auswahl
  * getroffen, Dateien an das Files-Package übergeben)
@@ -52,22 +58,105 @@ class BeaMessage extends Model
         ];
     }
 
-    /** @return BelongsTo<BeaArchive, $this> */
-    public function archive(): BelongsTo
+    /**
+     * Original-ZIP (Spalten archive_*), null wenn keine abgelegt ist.
+     *
+     * @return Attribute<?BeaZip, never>
+     */
+    protected function archive(): Attribute
     {
-        return $this->belongsTo(BeaArchive::class, 'bea_archive_id');
+        return Attribute::get(fn () => BeaZip::fromColumns($this->attributes));
     }
 
-    /** @return HasMany<BeaMessageFile, $this> */
-    public function messageFiles(): HasMany
+    /**
+     * Übernommene Dateien im Files-Package – sie gehören immer der Nachricht.
+     *
+     * @return MorphMany<File, $this>
+     */
+    public function files(): MorphMany
     {
-        return $this->hasMany(BeaMessageFile::class);
+        return $this->morphMany(File::class, 'model')->orderBy('id');
     }
 
-    /** @return HasMany<BeaAssignment, $this> */
-    public function assignments(): HasMany
+    /** @var BaseCollection<int, BeaFile>|null */
+    private ?BaseCollection $messageFilesCache = null;
+
+    /**
+     * Jede Datei der Original-ZIP (data.files), mit dem File, falls übernommen.
+     *
+     * @return BaseCollection<int, BeaFile>
+     */
+    public function messageFiles(): BaseCollection
     {
-        return $this->hasMany(BeaAssignment::class)->orderBy('id');
+        if ($this->messageFilesCache !== null) {
+            return $this->messageFilesCache;
+        }
+
+        $rows = (array) ($this->data['files'] ?? []);
+        $files = $rows === [] || ! $this->exists ? collect() : $this->files()->get();
+        $byPath = $files->keyBy(fn (File $file) => (string) ($file->custom_properties['bea']['zip_path'] ?? ''));
+        $byName = $files->keyBy(fn (File $file) => (string) ($file->custom_properties['bea']['name'] ?? ''));
+
+        $list = [];
+        foreach (array_values($rows) as $i => $row) {
+            $row = (array) $row;
+            $file = $byPath->get((string) ($row['zip_path'] ?? '')) ?? $byName->get((string) ($row['name'] ?? ''));
+            $list[] = BeaFile::fromArray($i + 1, $row, $file);
+        }
+
+        return $this->messageFilesCache = collect($list);
+    }
+
+    /**
+     * Anlagen (role attachment), wie sie in der Auswahl stehen.
+     *
+     * @return BaseCollection<int, BeaFile>
+     */
+    public function attachmentFiles(): BaseCollection
+    {
+        return $this->messageFiles()->filter(fn (BeaFile $f) => $f->isAttachment())->values();
+    }
+
+    /**
+     * Noch nicht übernommene, vorgeschlagene Anlagen.
+     *
+     * @return BaseCollection<int, BeaFile>
+     */
+    public function suggestedFiles(): BaseCollection
+    {
+        return $this->messageFiles()->filter(fn (BeaFile $f) => $f->isSelectable() && $f->suggested)->values();
+    }
+
+    public function messageFile(int $id): ?BeaFile
+    {
+        return $this->messageFiles()->firstWhere('id', $id);
+    }
+
+    /** Nach Übernahme oder erneutem Einlesen neu aufbauen. */
+    public function forgetMessageFiles(): static
+    {
+        $this->messageFilesCache = null;
+        $this->unsetRelation('files');
+
+        return $this;
+    }
+
+    public function refresh()
+    {
+        $this->messageFilesCache = null;
+
+        return parent::refresh();
+    }
+
+    /**
+     * Zuordnung der Nachricht: beim Einlesen der User (bzw. das Modell, aus
+     * dem heraus eingelesen wurde), nach der Übernahme z. B. das Dokument.
+     *
+     * @return MorphTo<Model, $this>
+     */
+    public function model(): MorphTo
+    {
+        return $this->morphTo();
     }
 
     /** @return HasMany<BeaVerification, $this> */
@@ -89,40 +178,51 @@ class BeaMessage extends Model
      */
     public function acceptedFiles(): Collection
     {
-        $ids = $this->messageFiles->pluck('file_id')->filter();
-
-        return File::query()->whereKey($ids)->orderBy('id')->get();
+        return $this->files()->get();
     }
 
     /**
-     * Zuordnung festhalten, z. B. zur Akte – im eigenen Listener auf
-     * BeaMessageImported oder bei der Übernahme. Die erste Zuordnung ist die
-     * Hauptzuordnung.
+     * Zuordnung setzen (ersetzt die bisherige), z. B. das Dokument nach der
+     * Übernahme im Listener auf BeaFilesAccepted.
      */
-    public function assignTo(Model $model): BeaAssignment
+    public function assignTo(Model $model): void
     {
-        return $this->assignments()->firstOrCreate(
-            ['assignable_type' => $model->getMorphClass(), 'assignable_id' => $model->getKey()],
-            ['assigned_by' => auth()->id()],
-        );
+        $this->update(['model_type' => $model->getMorphClass(), 'model_id' => $model->getKey()]);
+        $this->setRelation('model', $model);
     }
 
-    public function unassign(Model $model): void
+    public function unassign(): void
     {
-        $this->assignments()
-            ->where('assignable_type', $model->getMorphClass())
-            ->where('assignable_id', $model->getKey())
-            ->delete();
+        $this->update(['model_type' => null, 'model_id' => null]);
+        $this->unsetRelation('model');
     }
 
-    public function primaryAssignment(): ?BeaAssignment
+    /**
+     * Morph-Typ, der nur den User bezeichnet (bea.default_model_type) – eine
+     * solche Zuordnung gilt nicht als Zuordnung zu einem Modell der Anwendung.
+     */
+    public static function userModelType(): string
     {
-        return $this->assignments->first();
+        return (string) config('bea.default_model_type', 'App\\Models\\User');
     }
 
+    /**
+     * Einem Modell der Anwendung zugeordnet (nicht nur dem User): an dieses
+     * Modell gehen die übernommenen Dateien.
+     */
     public function isAssigned(): bool
     {
-        return $this->assignments->isNotEmpty();
+        return $this->model_type !== null && $this->model_id !== null && $this->model_type !== self::userModelType();
+    }
+
+    /**
+     * @param  Builder<BeaMessage>  $query
+     */
+    public function scopeAssigned(Builder $query, bool $assigned = true): void
+    {
+        $assigned
+            ? $query->whereNotNull('model_type')->whereNotNull('model_id')->where('model_type', '!=', self::userModelType())
+            : $query->where(fn (Builder $q) => $q->whereNull('model_type')->orWhereNull('model_id')->orWhere('model_type', self::userModelType()));
     }
 
     public function isOutgoing(): bool
@@ -149,8 +249,7 @@ class BeaMessage extends Model
     }
 
     /**
-     * Nachrichten, die einem der Besitzer zugeordnet sind – direkt oder über
-     * eine übernommene Datei, die dem Besitzer gehört (z. B. ein Dokument).
+     * Nachrichten, die einem der Besitzer zugeordnet sind (bea_messages.model).
      *
      * @param  Builder<BeaMessage>  $query
      * @param  list<array{0: string, 1: int|string}>  $owners  [model_type, model_id]-Paare
@@ -161,17 +260,10 @@ class BeaMessage extends Model
             return;
         }
 
-        $match = function (Builder $q, string $typeColumn, string $idColumn) use ($owners) {
-            $q->where(function (Builder $w) use ($owners, $typeColumn, $idColumn) {
-                foreach ($owners as [$type, $id]) {
-                    $w->orWhere(fn (Builder $o) => $o->where($typeColumn, $type)->where($idColumn, $id));
-                }
-            });
-        };
-
-        $query->where(function (Builder $q) use ($match) {
-            $q->whereHas('assignments', fn (Builder $a) => $match($a, 'assignable_type', 'assignable_id'))
-                ->orWhereHas('messageFiles.file', fn (Builder $f) => $match($f, 'model_type', 'model_id'));
+        $query->where(function (Builder $w) use ($owners) {
+            foreach ($owners as [$type, $id]) {
+                $w->orWhere(fn (Builder $o) => $o->where('model_type', $type)->where('model_id', $id));
+            }
         });
     }
 

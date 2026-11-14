@@ -7,16 +7,14 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Nfgarching\Bea\Models\BeaMessage;
-use Nfgarching\Bea\Models\BeaMessageFile;
 
 /**
  * beA-Nachrichten eines Modells – zum Einbetten in Akten, Dokumente und Namen:
  *
  *     <livewire:bea.listing :model_type="$akte->getMorphClass()" :model_id="$akte->id" />
  *
- * Gefunden werden Nachrichten, die dem Modell zugeordnet sind, und solche,
- * aus denen eine Datei des Modells stammt (z. B. das Dokument zu einer
- * übernommenen Verfügung). Ohne Modell zeigt die Komponente alle Nachrichten.
+ * Gefunden werden Nachrichten, die dem Modell zugeordnet sind
+ * (bea_messages.model). Ohne Modell zeigt die Komponente alle Nachrichten.
  */
 class Listing extends Component
 {
@@ -56,8 +54,7 @@ class Listing extends Component
 
         $rows = BeaMessage::query()
             ->withCount([
-                'messageFiles as attachments_count' => fn ($q) => $q->where('role', BeaMessageFile::ROLE_ATTACHMENT),
-                'messageFiles as accepted_count' => fn ($q) => $q->whereNotNull('accepted_at'),
+                'files as accepted_count',
             ])
             ->forOwners($owners)
             ->search($this->search)

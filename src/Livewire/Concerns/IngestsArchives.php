@@ -8,8 +8,8 @@ use Nfgarching\Bea\Services\BeaImporter;
 
 /**
  * Gemeinsames Einlesen für Verzeichnis-Import und Upload: Ergebnisliste und
- * Vorbelegung der Zuordnung, wenn die Seite aus einer Akte, einem Dokument
- * oder Namen heraus geöffnet wurde.
+ * Zuordnung zum aufrufenden Modell (statt zum User), wenn die Seite aus einem
+ * Dokument o. ä. heraus geöffnet wurde.
  */
 trait IngestsArchives
 {
@@ -46,7 +46,7 @@ trait IngestsArchives
             if ($owner) {
                 $message->assignTo($owner);
             }
-            $suggested = $message->messageFiles->where('suggested', true)->count();
+            $suggested = $message->suggestedFiles()->count();
             $this->results[] = [
                 'type' => 'success',
                 'text' => "{$name}: beA {$message->bea_id} eingelesen (AZ ".($message->aktenzeichen ?? '–')."), {$suggested} Datei(en) zur Übernahme vorgeschlagen",

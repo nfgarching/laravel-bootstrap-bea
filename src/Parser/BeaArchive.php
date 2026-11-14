@@ -86,7 +86,7 @@ final class BeaArchive
     /**
      * Liest eine einzelne Datei aus der ZIP, ohne alles zu entpacken – z. B.
      * für die Vorschau vor dem Übernehmen. $relative ist der Pfad, wie ihn
-     * extract() liefert (bea_message_files.zip_path). null, wenn es die Datei
+     * extract() liefert (data.files[].zip_path). null, wenn es die Datei
      * nicht gibt oder sie größer als $maxBytes ist.
      */
     public function read(string $zipPath, string $relative, int $maxBytes = 104857600): ?string

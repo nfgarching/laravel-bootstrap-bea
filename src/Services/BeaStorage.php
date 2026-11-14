@@ -4,8 +4,9 @@ namespace Nfgarching\Bea\Services;
 
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
+use Nfgarching\Bea\Data\BeaZip;
 use Nfgarching\Bea\Exceptions\InvalidBeaArchive;
-use Nfgarching\Bea\Models\BeaArchive;
+use Nfgarching\Bea\Models\BeaMessage;
 
 /**
  * Disk „beas“: Eingang (inbox), Originale (archive/{Jahr}) und nicht
@@ -79,18 +80,19 @@ class BeaStorage
 
     /**
      * Legt die ZIP unverändert im Archiv ab. Eine inhaltsgleiche ZIP
-     * (gleiche SHA-256) wird nicht doppelt gespeichert.
+     * (gleiche SHA-256), die schon auf der Disk liegt, wird nicht doppelt
+     * gespeichert – die Nachrichten verweisen dann auf dieselbe Datei.
      */
-    public function storeArchive(string $localZip, string $originalName, string $source = 'upload'): BeaArchive
+    public function storeArchive(string $localZip, string $originalName, string $source = 'upload'): BeaZip
     {
         $sha256 = hash_file('sha256', $localZip);
         if ($sha256 === false) {
             throw new InvalidBeaArchive('ZIP-Datei nicht lesbar: '.$originalName);
         }
 
-        $existing = BeaArchive::where('sha256', $sha256)->first();
-        if ($existing && $this->exists($existing)) {
-            return $existing;
+        $known = BeaMessage::query()->where('archive_sha256', $sha256)->whereNotNull('archive_path')->orderBy('id')->first();
+        if ($known?->archive && $this->exists($known->archive)) {
+            return $known->archive;
         }
 
         $path = trim((string) config('bea.archive.path', 'archive'), '/')
@@ -107,25 +109,17 @@ class BeaStorage
             }
         }
 
-        $attributes = [
-            'disk' => $this->diskName(),
-            'path' => $path,
-            'original_name' => $originalName,
-            'size' => filesize($localZip),
-            'source' => $source,
-            'imported_by' => auth()->id(),
-        ];
-
-        if ($existing) {
-            $existing->update($attributes);
-
-            return $existing;
-        }
-
-        return BeaArchive::create($attributes + ['sha256' => $sha256]);
+        return new BeaZip(
+            disk: $this->diskName(),
+            path: $path,
+            original_name: $originalName,
+            sha256: $sha256,
+            size: (int) filesize($localZip),
+            source: $source,
+        );
     }
 
-    public function exists(BeaArchive $archive): bool
+    public function exists(BeaZip $archive): bool
     {
         return Storage::disk($archive->disk)->exists($archive->path);
     }
@@ -151,7 +145,7 @@ class BeaStorage
         return $local;
     }
 
-    public function localArchive(BeaArchive $archive): string
+    public function localArchive(BeaZip $archive): string
     {
         if (! $this->exists($archive)) {
             throw new InvalidBeaArchive('Original-ZIP fehlt auf der Disk: '.$archive->path);

@@ -7,16 +7,15 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File as Filesystem;
 use Illuminate\Support\Facades\Log;
+use Nfgarching\Bea\Data\BeaFile;
 use Nfgarching\Bea\Data\BeaMessageData;
+use Nfgarching\Bea\Data\BeaZip;
 use Nfgarching\Bea\Events\BeaFilesAccepted;
 use Nfgarching\Bea\Events\BeaMessageImported;
 use Nfgarching\Bea\Exceptions\InvalidBeaArchive;
-use Nfgarching\Bea\Models\BeaArchive as BeaArchiveModel;
 use Nfgarching\Bea\Models\BeaMessage;
-use Nfgarching\Bea\Models\BeaMessageFile;
 use Nfgarching\Bea\Parser\BeaArchive;
 use Nfgarching\Bea\Parser\BeaMessageParser;
-use Nfgarching\Files\Events\NewFiles;
 use Nfgarching\Files\Models\File;
 
 /**
@@ -29,8 +28,12 @@ use Nfgarching\Files\Models\File;
  *
  * accept()  Übernehmen – nur die von Hand gewählten Dateien werden aus der
  *           Original-ZIP geholt, gegen die erfasste Prüfsumme geprüft und an
- *           das Files-Package übergeben; dabei werden Akte und Namen
- *           zugeordnet. Signaturdateien (.p7s) bleiben in der ZIP.
+ *           das Files-Package übergeben. Die Files gehören immer der
+ *           beA-Nachricht (empfangener Stand als Beweis); die Anwendung
+ *           erreicht sie über die Zuordnung der Nachricht (bea_messages.model,
+ *           z. B. ein Dokument). Akte, Namen … gehen als Kontext mit dem
+ *           Event BeaFilesAccepted an die Anwendung.
+ *           Signaturdateien (.p7s) bleiben in der ZIP.
  */
 class BeaImporter
 {
@@ -47,9 +50,22 @@ class BeaImporter
      * Liest eine ZIP ein. Bereits eingelesene Nachrichten (beA-ID/OSCI-ID)
      * werden übersprungen; sind alle bekannt, wird die ZIP nicht erneut abgelegt.
      *
-     * @return array{archive: ?BeaArchiveModel, imported: list<BeaMessage>, skipped: list<string>, warnings: list<string>}
+     * Sammel-ZIPs aus dem beA-Export mehrerer Nachrichten (Posteingang.zip mit
+     * je einer Nachricht_….zip) werden aufgelöst: jede innere ZIP wird als
+     * eigene Nachricht eingelesen und als eigenes Original abgelegt; die
+     * Sammel-ZIP selbst wird nicht archiviert.
+     *
+     * @return array{archive: ?BeaZip, archives: list<BeaZip>, imported: list<BeaMessage>, skipped: list<string>, warnings: list<string>}
      */
     public function ingest(string $zipPath, ?string $originalName = null, string $source = 'upload', bool $force = false): array
+    {
+        return $this->ingestZip($zipPath, $originalName, $source, $force, nested: false);
+    }
+
+    /**
+     * @return array{archive: ?BeaZip, archives: list<BeaZip>, imported: list<BeaMessage>, skipped: list<string>, warnings: list<string>}
+     */
+    private function ingestZip(string $zipPath, ?string $originalName, string $source, bool $force, bool $nested): array
     {
         $originalName = $this->safeName($originalName ?: basename($zipPath));
         $work = $this->makeWorkspace();
@@ -57,11 +73,38 @@ class BeaImporter
         try {
             $this->archive->extract($zipPath, $work.'/x');
             $directories = BeaMessageParser::messageDirectories($work.'/x');
-            if ($directories === []) {
+            // Innere ZIPs nur eine Ebene tief (Sammel-ZIP → Nachricht_….zip)
+            $innerZips = $nested ? [] : $this->innerZips($work.'/x');
+
+            if ($directories === [] && $innerZips === []) {
                 throw new InvalidBeaArchive("Keine beA-Nachricht in {$originalName} gefunden.");
             }
 
-            $result = ['archive' => null, 'imported' => [], 'skipped' => [], 'warnings' => []];
+            $result = ['archive' => null, 'archives' => [], 'imported' => [], 'skipped' => [], 'warnings' => []];
+
+            foreach ($innerZips as $inner) {
+                try {
+                    $part = $this->ingestZip($work.'/x/'.$inner, basename($inner), $source, $force, nested: true);
+                } catch (\Throwable $e) {
+                    $result['warnings'][] = $originalName.' → '.basename($inner).': '.$e->getMessage();
+                    Log::warning('beA-Einlesen: '.$originalName.' → '.basename($inner).': '.$e->getMessage());
+
+                    continue;
+                } finally {
+                    // ingestZip() der inneren ZIP hat die Disk auf ihr Arbeitsverzeichnis umgestellt
+                    $this->useWorkspace($work);
+                }
+                $result['archive'] ??= $part['archive'];
+                array_push($result['archives'], ...$part['archives']);
+                array_push($result['imported'], ...$part['imported']);
+                array_push($result['skipped'], ...$part['skipped']);
+                array_push($result['warnings'], ...$part['warnings']);
+            }
+
+            if ($innerZips !== [] && $directories === [] && $result['imported'] === [] && $result['skipped'] === []) {
+                throw new InvalidBeaArchive("Keine beA-Nachricht in {$originalName} gefunden: ".implode(' ', $result['warnings']));
+            }
+
             $pending = [];
             foreach ($directories as $directory) {
                 $data = $this->parser->parse($work.'/x', $directory);
@@ -78,10 +121,12 @@ class BeaImporter
                 return $result;
             }
 
-            $result['archive'] = $this->storage->storeArchive($zipPath, $originalName, $source);
+            $archive = $this->storage->storeArchive($zipPath, $originalName, $source);
+            $result['archive'] ??= $archive;
+            $result['archives'][] = $archive;
 
             foreach ($pending as [$data, $existing]) {
-                $result['imported'][] = $this->ingestMessage($work.'/x', $data, $existing, $result['archive']);
+                $result['imported'][] = $this->ingestMessage($work.'/x', $data, $existing, $archive);
                 array_push($result['warnings'], ...$data->warnings);
             }
 
@@ -91,15 +136,34 @@ class BeaImporter
         }
     }
 
-    private function ingestMessage(string $root, BeaMessageData $data, ?BeaMessage $existing, BeaArchiveModel $archive): BeaMessage
+    /**
+     * ZIP-Dateien im entpackten Archiv (relativ), sortiert.
+     *
+     * @return list<string>
+     */
+    private function innerZips(string $root): array
+    {
+        $zips = [];
+        $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS));
+        foreach ($iterator as $file) {
+            if ($file->isFile() && strtolower($file->getExtension()) === 'zip') {
+                $zips[] = ltrim(substr($file->getPathname(), strlen($root)), '/');
+            }
+        }
+        sort($zips);
+
+        return $zips;
+    }
+
+    private function ingestMessage(string $root, BeaMessageData $data, ?BeaMessage $existing, BeaZip $archive): BeaMessage
     {
         $vhn = $this->verifier->verify(
             $data->metaFiles['vhn'] ? $root.'/'.$data->metaFiles['vhn'] : null,
             $data->metaFiles['vhn_signature'] ? $root.'/'.$data->metaFiles['vhn_signature'] : null,
         );
 
-        $payload = $data->toArray() + ['vhn_signature' => $vhn];
         $rows = $this->fileRows($root, $data);
+        $payload = $data->toArray() + ['vhn_signature' => $vhn, 'files' => $rows];
         $integrity = match (true) {
             ! ($data->vhn['present'] ?? false) => 'missing',
             $data->integrity['complete'] => 'complete',
@@ -108,7 +172,6 @@ class BeaImporter
 
         $message = DB::transaction(function () use ($data, $existing, $archive, $payload, $vhn, $rows, $integrity) {
             $attributes = [
-                'bea_archive_id' => $archive->id,
                 'directory' => $data->directory,
                 'bea_id' => $data->beaId,
                 'osci_id' => $data->osciId,
@@ -129,26 +192,23 @@ class BeaImporter
                 'eeb_requested' => $data->eebRequested,
                 'integrity' => $integrity,
                 'vhn_signature' => $vhn['status'],
+                'attachments_count' => count(array_filter($rows, fn (array $row) => $row['role'] === BeaFile::ROLE_ATTACHMENT)),
                 'data' => $payload,
-            ];
+            ] + $archive->toColumns();
 
             if ($existing) {
-                // Erneutes Einlesen (--force): bereits übernommene Dateien behalten ihre Zeile
-                $existing->messageFiles()->whereNull('file_id')->delete();
+                // Erneutes Einlesen (--force): übernommene Dateien bleiben Files der Nachricht
                 $existing->update($attributes);
                 $message = $existing;
             } else {
+                // Zuordnung zunächst an den User, der einliest (Konsole: keine)
+                $user = auth()->user();
                 $message = BeaMessage::create($attributes + [
                     'status' => BeaMessage::STATUS_INGESTED,
                     'imported_by' => auth()->id(),
+                    'model_type' => $user?->getMorphClass(),
+                    'model_id' => $user?->getKey(),
                 ]);
-            }
-
-            $kept = $message->messageFiles()->pluck('zip_path')->all();
-            foreach ($rows as $row) {
-                if (! in_array($row['zip_path'], $kept, true)) {
-                    $message->messageFiles()->create($row);
-                }
             }
 
             $message->verifications()->create([
@@ -171,7 +231,7 @@ class BeaImporter
 
         Log::info('beA-Nachricht '.($data->beaId ?? '?').' eingelesen (AZ '.($data->aktenzeichen ?? '–').', '.count($data->attachments).' Datei(en))');
 
-        $message->load('messageFiles');
+        $message->forgetMessageFiles();
 
         BeaMessageImported::dispatch($message, $data->aktenzeichen, $data->aktenzeichenAbsender, $payload);
 
@@ -179,8 +239,8 @@ class BeaImporter
     }
 
     /**
-     * Zeilen für bea_message_files: Anhänge mit Vorschlag, Signaturdateien
-     * und die technischen Begleitdateien.
+     * Einträge für data.files: Anhänge mit Vorschlag, Signaturdateien und
+     * die technischen Begleitdateien.
      *
      * @return list<array<string, mixed>>
      */
@@ -195,15 +255,24 @@ class BeaImporter
             }
         }
 
+        // Nie übernehmen (bea.exclude_extensions, z. B. xml): bleiben als Begleitdatei in der ZIP
+        $excluded = array_map('strtolower', (array) config('bea.exclude_extensions', ['xml']));
+
         $rows = [];
         foreach ($data->attachments as $attachment) {
             $isSignature = ! empty($attachment['signature_of']);
-            $class = $isSignature
+            $isExcluded = ! $isSignature && in_array(strtolower(pathinfo($attachment['name'], PATHINFO_EXTENSION)), $excluded, true);
+            $class = $isSignature || $isExcluded
                 ? ['category' => null, 'suggested' => false]
                 : $classifier->classify($attachment['name'], $attachment['display_name'] ?? null, $attachment['document_class'] ?? null);
 
             $rows[] = [
-                'role' => $isSignature ? BeaMessageFile::ROLE_SIGNATURE : BeaMessageFile::ROLE_ATTACHMENT,
+                'role' => match (true) {
+                    $isSignature => BeaFile::ROLE_SIGNATURE,
+                    $isExcluded => BeaFile::ROLE_META,
+                    default => BeaFile::ROLE_ATTACHMENT,
+                },
+                'kind' => $isExcluded ? 'excluded' : null,
                 'name' => $attachment['name'],
                 'zip_path' => $attachment['path'],
                 'display_name' => $attachment['display_name'] ?? null,
@@ -225,8 +294,8 @@ class BeaImporter
             }
             $name = basename($path);
             $rows[] = [
-                'role' => BeaMessageFile::ROLE_META,
-                'kind' => $kind,
+                'role' => BeaFile::ROLE_META,
+                'kind' => preg_replace('/_\d+$/', '', (string) $kind),
                 'name' => $name,
                 'zip_path' => $path,
                 'sha256' => hash_file('sha256', $root.'/'.$path) ?: null,
@@ -245,23 +314,26 @@ class BeaImporter
      * Vor der Übergabe wird die Original-ZIP gegen ihre Prüfsumme vom
      * Einlesen geprüft und jede gewählte Datei gegen ihre erfasste Prüfsumme.
      *
-     * @param  list<int>  $messageFileIds  IDs aus bea_message_files (nur role=attachment, noch nicht übernommen)
-     * @param  list<Model>  $assignments  Akte, Namen …; die erste Zuordnung der Nachricht ist die Hauptzuordnung
+     * Die Files gehören der Nachricht. $target ersetzt vorher ihre Zuordnung,
+     * z. B. das Dokument, aus dem heraus übernommen wird; ist sie nur dem User
+     * zugeordnet, legt die Anwendung im Listener auf BeaFilesAccepted das
+     * Ziel an (z. B. ein neues Dokument) und trägt es mit assignTo() ein.
+     *
+     * @param  list<int>  $messageFileIds  BeaFile::$id aus data.files (nur übernehmbare Anlagen zählen)
+     * @param  list<Model>  $context  Akte, Namen … für die Anwendung (Event BeaFilesAccepted), werden nicht gespeichert
      * @return array{files: list<File>, failed: list<string>}
      */
-    public function accept(BeaMessage $message, array $messageFileIds, array $assignments = [], ?string $subject = null): array
+    public function accept(BeaMessage $message, array $messageFileIds, array $context = [], ?string $subject = null, ?Model $target = null): array
     {
-        foreach ($assignments as $model) {
-            $message->assignTo($model);
+        if ($target) {
+            $message->assignTo($target);
         }
-        $message->load('assignments');
-        $primary = $message->primaryAssignment();
+        $contextPairs = array_map(fn (Model $model) => ['type' => $model->getMorphClass(), 'id' => $model->getKey()], $context);
 
-        $rows = $messageFileIds === [] ? collect() : $message->messageFiles()
-            ->whereKey($messageFileIds)
-            ->where('role', BeaMessageFile::ROLE_ATTACHMENT)
-            ->whereNull('accepted_at')
-            ->get();
+        $ids = array_map('intval', $messageFileIds);
+        $rows = $ids === [] ? collect() : $message->forgetMessageFiles()->messageFiles()
+            ->filter(fn (BeaFile $row) => in_array($row->id, $ids, true) && $row->isSelectable())
+            ->values();
 
         $files = [];
         $failed = [];
@@ -290,13 +362,12 @@ class BeaImporter
                 }
 
                 foreach ($rows as $row) {
-                    $file = $this->importFile($row, $message, $primary?->assignable_type, $primary?->assignable_id);
+                    $file = $this->importFile($row, $message);
                     if (! $file) {
                         $failed[] = $row->name;
 
                         continue;
                     }
-                    $row->update(['file_id' => $file->id, 'accepted_at' => now()]);
                     $files[] = $file;
                 }
             } finally {
@@ -304,6 +375,7 @@ class BeaImporter
                     @unlink($local);
                 }
                 $this->removeWorkspace($work);
+                $message->forgetMessageFiles();
             }
 
             $message->verifications()->create([
@@ -314,7 +386,7 @@ class BeaImporter
                 'vhn_signature' => $message->vhn_signature,
                 'result' => [
                     'archive' => ['sha256' => $archive->sha256],
-                    'accepted' => $rows->map(fn (BeaMessageFile $row) => ['name' => $row->name, 'sha256' => $row->sha256])->all(),
+                    'accepted' => $rows->map(fn (BeaFile $row) => ['name' => $row->name, 'sha256' => $row->sha256])->all(),
                     'failed' => $failed,
                 ],
                 'checked_by' => auth()->id(),
@@ -329,35 +401,7 @@ class BeaImporter
 
         $fileIds = array_map(fn (File $file) => $file->id, $files);
 
-        // Übergabe an die Hauptzuordnung (z. B. Dokumente der Akte). Dateien, die
-        // früher ohne Zuordnung übernommen wurden, werden jetzt nachgereicht.
-        if ($primary) {
-            $waiting = File::query()
-                ->where('model_type', $message->getMorphClass())
-                ->where('model_id', $message->id)
-                ->whereKey($message->messageFiles()->whereNotNull('file_id')->pluck('file_id'))
-                ->get();
-            foreach ($waiting as $file) {
-                $file->update(['model_type' => $primary->assignable_type, 'model_id' => $primary->assignable_id]);
-            }
-            $handover = array_values(array_unique([...$fileIds, ...$waiting->modelKeys()]));
-
-            if ($handover !== []) {
-                event(new NewFiles(
-                    $handover,
-                    $primary->assignable_type,
-                    $primary->assignable_id,
-                    $subject ?: $message->subject,
-                    $this->handoverData($message),
-                ));
-            }
-        }
-
-        BeaFilesAccepted::dispatch(
-            $message,
-            $fileIds,
-            $message->assignments->map(fn ($a) => ['type' => $a->assignable_type, 'id' => $a->assignable_id])->all(),
-        );
+        BeaFilesAccepted::dispatch($message, $fileIds, $contextPairs, $subject ?: $message->subject);
 
         Log::info('beA-Nachricht '.($message->bea_id ?? '#'.$message->id).': '.count($fileIds).' Datei(en) übernommen');
 
@@ -370,13 +414,13 @@ class BeaImporter
      * das Original bleibt Hauptdatei, OCR-Text entsteht daneben. Liegt eine
      * abgesetzte Signatur in der ZIP, wird die Datei zusätzlich gesperrt.
      */
-    private function importFile(BeaMessageFile $row, BeaMessage $message, ?string $modelType, int|string|null $modelId): ?File
+    private function importFile(BeaFile $row, BeaMessage $message): ?File
     {
         $input = [
             'original' => true,
             'collection_name' => config('bea.collection', 'bea'),
-            'model_type' => $modelType ?? $message->getMorphClass(),
-            'model_id' => $modelId ?? $message->id,
+            'model_type' => $message->getMorphClass(),
+            'model_id' => $message->id,
         ];
 
         // Anzeigename aus XJustiz („Ladung zum Termin“), Dateiendung ergänzen
@@ -399,6 +443,7 @@ class BeaImporter
             'message_id' => $message->id,
             'bea_id' => $message->bea_id,
             'name' => $row->name,
+            'zip_path' => $row->zip_path,
             'sha256' => $row->sha256,
             'category' => $row->category,
             'signed' => (bool) $row->signed,
@@ -415,37 +460,21 @@ class BeaImporter
     }
 
     /**
-     * @return array<string, mixed>
-     */
-    private function handoverData(BeaMessage $message): array
-    {
-        return [
-            'source' => 'bea',
-            'bea_message_id' => $message->id,
-            'bea_id' => $message->bea_id,
-            'aktenzeichen' => $message->aktenzeichen,
-            'aktenzeichen_absender' => $message->aktenzeichen_absender,
-            'sender' => $message->sender_name,
-            'received_at' => $message->received_at?->toIso8601String(),
-            'sent_at' => $message->sent_at?->toIso8601String(),
-            'direction' => $message->direction,
-            'eeb_requested' => (bool) $message->eeb_requested,
-            'assignments' => $message->assignments->map(fn ($a) => ['type' => $a->assignable_type, 'id' => $a->assignable_id])->all(),
-        ];
-    }
-
-    /**
      * Arbeitsverzeichnis als Disk, damit File::importFromDisk() es lesen kann.
      */
     private function makeWorkspace(): string
     {
         $work = sys_get_temp_dir().'/bea-import-'.bin2hex(random_bytes(6));
         Filesystem::ensureDirectoryExists($work, 0700);
-
-        config(['filesystems.disks.'.self::DISK => ['driver' => 'local', 'root' => $work, 'throw' => false]]);
-        app('filesystem')->forgetDisk(self::DISK);
+        $this->useWorkspace($work);
 
         return $work;
+    }
+
+    private function useWorkspace(string $work): void
+    {
+        config(['filesystems.disks.'.self::DISK => ['driver' => 'local', 'root' => $work, 'throw' => false]]);
+        app('filesystem')->forgetDisk(self::DISK);
     }
 
     private function removeWorkspace(string $work): void

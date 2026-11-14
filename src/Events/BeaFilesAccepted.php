@@ -10,11 +10,13 @@ use Nfgarching\Files\Models\File;
 
 /**
  * Die Auswahl einer beA-Nachricht wurde übernommen: die gewählten Dateien
- * liegen im Files-Package, die Zuordnungen (Akte, Namen …) stehen fest.
+ * liegen im Files-Package und gehören der Nachricht (model_type BeaMessage) –
+ * sie werden nicht umgehängt. Die Anwendung erreicht sie über die Zuordnung
+ * der Nachricht ($message->model, z. B. ein Dokument).
  *
- * Für die Hauptzuordnung löst das Package zusätzlich NewFiles des
- * Files-Packages aus (Übergabe an Dokumente). Dieses Event trägt alle
- * Zuordnungen, auch die weiteren.
+ * $context trägt, was beim Übernehmen gewählt bzw. mitgegeben wurde (Akte,
+ * Namen …); gespeichert wird es nicht. Legt der Listener ein Modell an
+ * (z. B. das Dokument), trägt er es mit $message->assignTo() ein.
  */
 class BeaFilesAccepted
 {
@@ -22,12 +24,14 @@ class BeaFilesAccepted
 
     /**
      * @param  list<int>  $fileIds  File-IDs der in diesem Schritt übernommenen Dateien
-     * @param  list<array{type: string, id: int|string}>  $assignments  alle Zuordnungen, Hauptzuordnung zuerst
+     * @param  list<array{type: string, id: int|string}>  $context  Akte, Namen … aus der Übernahme
+     * @param  string|null  $subject  Betreff für die Übergabe (bea.select), sonst der der Nachricht
      */
     public function __construct(
         public BeaMessage $message,
         public array $fileIds,
-        public array $assignments,
+        public array $context = [],
+        public ?string $subject = null,
     ) {}
 
     /**

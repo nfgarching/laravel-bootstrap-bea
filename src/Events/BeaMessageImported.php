@@ -10,15 +10,13 @@ use Nfgarching\Files\Models\File;
 
 /**
  * Wird je neu eingelesener beA-Nachricht ausgelöst – noch bevor Dateien
- * übernommen sind. Der Listener im eigenen Projekt kann die Nachricht anhand
- * des Aktenzeichens vorab zuordnen; die Zuordnung erscheint dann bei der
- * Übernahme als Vorschlag:
- *
- *     $akte = Akte::where('aktenzeichen', $event->aktenzeichen)->first();
- *     $akte && $event->message->assignTo($akte);
+ * übernommen sind. Die Nachricht ist dann dem User zugeordnet, der sie
+ * eingelesen hat (bea_messages.model). Ein Listener im eigenen Projekt kann
+ * sie stattdessen einem Modell zuordnen ($event->message->assignTo($model));
+ * an dieses gehen später die übernommenen Dateien.
  *
  * Dateien gibt es zu diesem Zeitpunkt nicht: sie entstehen erst bei der
- * Übernahme (Events NewFiles des Files-Packages und BeaFilesAccepted).
+ * Übernahme (Event BeaFilesAccepted).
  * $data enthält alles, was ausgelesen wurde (siehe docs/Datenformat.md).
  */
 class BeaMessageImported
@@ -39,7 +37,7 @@ class BeaMessageImported
 
     /**
      * @deprecated Beim Einlesen entstehen keine Dateien mehr – immer leer.
-     *             Übernommene Dateien liefern NewFiles und BeaFilesAccepted.
+     *             Übernommene Dateien liefert BeaFilesAccepted.
      *
      * @var list<int>
      */

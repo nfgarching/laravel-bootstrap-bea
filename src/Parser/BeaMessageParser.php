@@ -68,6 +68,13 @@ final class BeaMessageParser
             };
             if ($role && $meta[$role] === null) {
                 $meta[$role] = $name;
+            } elseif ($role === 'technical_report') {
+                // Ein Prüfprotokoll je geprüfter Datei: weitere als technical_report_2, _3 …
+                $n = 2;
+                while (isset($meta['technical_report_'.$n])) {
+                    $n++;
+                }
+                $meta['technical_report_'.$n] = $name;
             }
         }
 

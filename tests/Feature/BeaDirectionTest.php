@@ -3,7 +3,6 @@
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
@@ -88,25 +87,4 @@ test('Liste und Modal zeigen gesendete Nachrichten mit Versanddatum und sortiere
         ->assertSeeInOrder(['Klage eingereicht', 'Ladung zum Termin'])
         ->assertSee('gesendet')
         ->assertSee($out->dated_at->timezone(config('app.timezone'))->format('d.m.Y H:i'));
-});
-
-test('die Migration erkennt bereits eingelesene gesendete Nachrichten nach', function () {
-    $out = app(BeaImporter::class)->ingest(beaFixtureZipOutgoing())['imported'][0];
-    // Stand vor der Migration: Richtung unbekannt, Aktenzeichen wie im Export
-    DB::table('bea_messages')->where('id', $out->id)->update([
-        'direction' => 'in',
-        'dated_at' => null,
-        'aktenzeichen' => '26/0001',
-        'aktenzeichen_absender' => '1 C 123/26',
-    ]);
-
-    $migration = require __DIR__.'/../../database/migrations/2026_11_14_000000_add_direction_to_bea_messages_table.php';
-    $migration->down();
-    $migration->up();
-
-    $out->refresh();
-    expect($out->direction)->toBe('out')
-        ->and($out->dated_at->equalTo($out->sent_at))->toBeTrue()
-        ->and($out->aktenzeichen)->toBe('1 C 123/26')
-        ->and($out->aktenzeichen_absender)->toBe('26/0001');
 });

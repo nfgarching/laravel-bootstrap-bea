@@ -117,13 +117,13 @@ test('der Eingang listet ZIPs der Disk und liest die markierten ein', function (
         ->assertSee('beA 100000001 eingelesen');
 
     Storage::disk('beas')->assertMissing('inbox/nachricht.zip');
-    // Aufruf aus einem Modell heraus: Zuordnung ist vorbelegt
-    expect(BeaMessage::first()->primaryAssignment()->assignable->is($this->user))->toBeTrue();
+    // Aufruf aus einem Modell heraus: die Nachricht ist ihm zugeordnet
+    expect(BeaMessage::first()->model->is($this->user))->toBeTrue();
 });
 
-test('die Auswahl ist mit den Vorschlägen vorbelegt und übernimmt mit Zuordnung', function () {
+test('die Auswahl ist mit den Vorschlägen vorbelegt und übergibt die Zuordnung als Kontext', function () {
     $message = app(BeaImporter::class)->ingest(beaFixtureZip())['imported'][0];
-    $suggested = $message->messageFiles->where('suggested', true)->pluck('id')->map(fn ($id) => (string) $id)->sort()->values()->all();
+    $suggested = $message->messageFiles()->where('suggested', true)->pluck('id')->map(fn ($id) => (string) $id)->sort()->values()->all();
 
     $component = Livewire::test(Select::class, ['messageId' => $message->id])
         ->assertSee('Ladung zum Termin')
@@ -141,8 +141,11 @@ test('die Auswahl ist mit den Vorschlägen vorbelegt und übernimmt mit Zuordnun
 
     $message->refresh();
     expect($message->status)->toBe('accepted')
-        ->and($message->primaryAssignment()->assignable->is($this->user))->toBeTrue()
+        ->and($message->model->is($this->user))->toBeTrue()
         ->and(File::count())->toBe(2);
+    Event::assertDispatched(BeaFilesAccepted::class, fn (BeaFilesAccepted $event) => $event->context === [
+        ['type' => $this->user->getMorphClass(), 'id' => $this->user->id],
+    ]);
 });
 
 test('Liste und Detailseite zeigen Nachricht, Dateien und Prüfung', function () {
@@ -192,13 +195,17 @@ test('Liste sortiert nach Eingang, die Detailseite blättert durch die gefiltert
 test('das Listing findet Nachrichten über Zuordnung und über übernommene Dateien', function () {
     $message = app(BeaImporter::class)->ingest(beaFixtureZip())['imported'][0];
     $other = User::factory()->create();
+    // Stellvertreter für ein Modell der Anwendung (z. B. ein Dokument)
+    $target = $message->latestVerification;
 
     Livewire::test(Listing::class, ['model_type' => $this->user->getMorphClass(), 'model_id' => $this->user->id])
+        ->assertSee('Ladung zum Termin');
+    Livewire::test(Listing::class, ['model_type' => $target->getMorphClass(), 'model_id' => $target->id])
         ->assertDontSee('Ladung zum Termin');
 
-    app(BeaImporter::class)->accept($message, $message->messageFiles->where('suggested', true)->pluck('id')->all(), [$this->user]);
+    app(BeaImporter::class)->accept($message, $message->messageFiles()->where('suggested', true)->pluck('id')->all(), target: $target);
 
-    Livewire::test(Listing::class, ['model_type' => $this->user->getMorphClass(), 'model_id' => $this->user->id])
+    Livewire::test(Listing::class, ['model_type' => $target->getMorphClass(), 'model_id' => $target->id])
         ->assertSee('Ladung zum Termin');
     Livewire::test(Listing::class, ['model_type' => $other->getMorphClass(), 'model_id' => $other->id])
         ->assertDontSee('Ladung zum Termin');

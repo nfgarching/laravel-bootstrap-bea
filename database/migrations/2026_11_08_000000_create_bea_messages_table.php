@@ -8,26 +8,22 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Eingelesene ZIP im Original auf der Disk „beas“
-        Schema::create('bea_archives', function (Blueprint $table) {
-            $table->id();
-            $table->string('disk', 64);
-            $table->string('path', 1024);
-            $table->string('original_name', 512);
-            $table->string('sha256', 64)->unique();
-            $table->unsignedBigInteger('size');
-            $table->string('source', 32)->default('upload');   // upload | inbox | console
-            $table->foreignId('imported_by')->nullable();
-            $table->timestamps();
-        });
-
         Schema::create('bea_messages', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('bea_archive_id')->nullable()->constrained('bea_archives')->nullOnDelete();
+            // Original-ZIP auf der Disk „beas“ (mehrere Nachrichten einer ZIP teilen sich die Datei)
+            $table->string('archive_disk', 64)->nullable();
+            $table->string('archive_path', 1024)->nullable();
+            $table->string('archive_name', 512)->nullable();     // Dateiname beim Einlesen
+            $table->string('archive_sha256', 64)->nullable()->index(); // Prüfsumme beim Einlesen
+            $table->unsignedBigInteger('archive_size')->nullable();
+            $table->string('archive_source', 32)->nullable();   // upload | inbox | console
             $table->string('directory', 1024)->nullable();      // Ordner der Nachricht in der ZIP
             $table->string('status', 32)->default('ingested')->index(); // ingested | accepted
+            // in = empfangen, out = gesendet (Journal der Exportansicht bzw. eigene SAFE-ID)
+            $table->string('direction', 3)->default('in')->index();
 
-            $table->nullableMorphs('model');                    // wird erst später belegt
+            // Zuordnung: beim Einlesen der User, nach der Übernahme z. B. das Dokument
+            $table->nullableMorphs('model');
 
             $table->string('bea_id', 64)->nullable()->unique();
             $table->string('osci_id', 191)->nullable()->index();
@@ -45,6 +41,8 @@ return new class extends Migration
             $table->timestamp('sent_at')->nullable();
             $table->timestamp('received_at')->nullable()->index();
             $table->timestamp('intermediary_at')->nullable();
+            // Eingang im Postfach, bei gesendeten Nachrichten der Versand – danach sortieren Listen
+            $table->timestamp('dated_at')->nullable()->index();
 
             $table->boolean('secure_channel')->nullable();
             $table->boolean('eeb_requested')->default(false);
@@ -54,41 +52,10 @@ return new class extends Migration
             $table->foreignId('imported_by')->nullable();
             $table->timestamp('accepted_at')->nullable();
             $table->foreignId('accepted_by')->nullable();
+            // Anzahl der Anlagen in data.files (für die Listen); jede Datei der ZIP steht in data.files
+            $table->unsignedSmallInteger('attachments_count')->default(0);
             $table->json('data')->nullable();
             $table->timestamps();
-        });
-
-        // Jede Datei der Nachricht in der ZIP – auch die, die nie übernommen werden
-        Schema::create('bea_message_files', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('bea_message_id')->constrained('bea_messages')->cascadeOnDelete();
-            $table->foreignId('file_id')->nullable()->constrained('files')->nullOnDelete(); // gesetzt nach Übernahme
-            $table->string('role', 32);                         // attachment | signature | meta
-            $table->string('kind', 32)->nullable();             // bei meta: xjustiz, vhn, vhn_signature, osci, export …
-            $table->string('name', 512);
-            $table->string('zip_path', 1024);
-            $table->string('display_name', 512)->nullable();
-            $table->string('document_class', 16)->nullable();
-            $table->string('category', 32)->nullable();         // verfuegung | schriftsatz | schreiben | anlage | sonstiges
-            $table->boolean('suggested')->default(false);
-            $table->boolean('signed')->default(false);          // abgesetzte Signatur (.p7s) liegt in der ZIP
-            $table->string('signature_name', 512)->nullable();  // Name der Signaturdatei in der ZIP
-            $table->string('signature_of', 512)->nullable();    // bei role=signature: signierte Datei
-            $table->string('sha256', 64)->nullable();
-            $table->unsignedBigInteger('size')->nullable();
-            $table->boolean('vhn_covered')->nullable();
-            $table->timestamp('accepted_at')->nullable();
-            $table->timestamps();
-        });
-
-        // Zuordnungen (Akte, Namen …); die erste ist die Hauptzuordnung
-        Schema::create('bea_assignments', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('bea_message_id')->constrained('bea_messages')->cascadeOnDelete();
-            $table->morphs('assignable');
-            $table->foreignId('assigned_by')->nullable();
-            $table->timestamps();
-            $table->unique(['bea_message_id', 'assignable_type', 'assignable_id'], 'bea_assignments_unique');
         });
 
         // Prüfhistorie: jede Prüfung von ZIP, Prüfsummen und Herkunftsnachweis
@@ -109,9 +76,6 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('bea_verifications');
-        Schema::dropIfExists('bea_assignments');
-        Schema::dropIfExists('bea_message_files');
         Schema::dropIfExists('bea_messages');
-        Schema::dropIfExists('bea_archives');
     }
 };

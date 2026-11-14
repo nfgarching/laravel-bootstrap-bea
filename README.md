@@ -34,15 +34,23 @@ liegt unverändert auf der Disk `beas`.
       ZIP und gewählte Dateien gegen die erfassten Prüfsummen prüfen
                                         │
                                         ▼
-      Dateien an nfgarching/files ──► Events NewFiles (Dokumente) und BeaFilesAccepted
+      Dateien an nfgarching/files ──► Event BeaFilesAccepted (Files bleiben bei der Nachricht)
 ```
 
+- **Sammel-ZIPs** aus dem Export mehrerer Nachrichten (z. B. `Posteingang.zip`
+  mit je einer `Nachricht_….zip`) werden aufgelöst: jede innere ZIP wird als
+  eigene Nachricht eingelesen und als eigenes Original abgelegt (eine Ebene
+  tief). Eine fehlerhafte innere ZIP erscheint als Hinweis, die übrigen
+  werden trotzdem eingelesen. Ordner mit mehreren Nachrichten in einer ZIP
+  gehen ebenfalls.
 - **Nicht alles wird übernommen.** Vorgeschlagen werden Verfügungen,
   Schriftsätze und Schreiben; Anlagen stehen zur Wahl, sind aber nicht
   vorausgewählt. Die Regeln stehen in `config/bea.php` (`suggest`).
 - **Signaturdateien (`.p7s`) und technische Dateien** (XJustiz, VHN,
-  Exportansicht, Prüfprotokolle) bleiben in der ZIP. Sie sind mit Prüfsumme
-  erfasst und auf der Detailseite sichtbar.
+  Exportansicht, alle `technisches_pruefprotokoll*`) bleiben in der ZIP,
+  ebenso Dateien mit den Endungen aus `bea.exclude_extensions` (Standard
+  `xml`, env `BEA_EXCLUDE_EXTENSIONS`). Sie sind mit Prüfsumme erfasst und auf
+  der Detailseite sichtbar, werden aber nie übernommen.
 - **Signierte Dateien** – solche mit abgesetzter Signatur in der ZIP – werden
   im Original übernommen, als „Original Dokument“ gekennzeichnet und im
   Files-Package gesperrt (`isLocked()`): kein Ersetzen durch die
@@ -83,7 +91,7 @@ keine URL und keinen öffentlichen Link.
 | Ordner | Inhalt |
 |---|---|
 | `inbox/` | Eingang: heruntergeladene ZIPs – wie `scans` im Files-Package |
-| `archive/{Jahr}/` | jede eingelesene ZIP im Original (`bea_archives`, mit SHA-256) |
+| `archive/{Jahr}/` | jede eingelesene ZIP im Original (Spalten `archive_*` in `bea_messages`, mit SHA-256) |
 | `failed/` | ZIPs, die sich nicht einlesen ließen |
 
 ## Einlesen
@@ -128,18 +136,18 @@ Nachrichten. Markierte Nachrichten werden in einem Schritt mit ihren
 - Mit `<x-button.dispatch modalName="openModalBeaPending" :href="route('bea.pending')" …>`
   öffnet ein Klick das Modal, **SHIFT** das Popup, CTRL einen Tab.
 - Standard ist `model_type` = `bea.default_model_type` (`App\Models\User`)
-  ohne ID: keine zusätzliche Zuordnung. Ein aufrufendes Modell (z. B. ein
-  Dokument) wird zugeordnet, sofern es in `bea.assign.types` steht; Schlüssel
-  aus `data` ordnet `bea.assign.context` zu
-  (`'Register_ID' => ['type' => 'akte', 'column' => 'ID']`).
+  ohne ID: die Zuordnung bleibt beim User. Ein aufrufendes Modell (z. B. ein
+  Dokument) wird die Zuordnung der Nachricht, sofern es in `bea.assign.types`
+  steht; Schlüssel aus `data` gibt `bea.assign.context` als Kontext an das
+  Event `BeaFilesAccepted` (`'Register_ID' => ['type' => 'akte', 'column' => 'ID']`).
 - Danach lädt die Seite (Modal) bzw. das aufrufende Fenster (Popup) neu.
 - **Vorschau:** Der Pfeil vor einer Nachricht klappt ihre Anlagen auf und
   zeigt gleich die erste vorgeschlagene PDF im Modal (Klick: Vorschau,
   SHIFT: Popup, CTRL: Tab). Die Datei kommt direkt aus der Original-ZIP über
-  `bea.file` (`/bea/{message}/file/{messageFile}`), nur Anlagen, nur wenn
+  `bea.file` (`/bea/{message}/file/{n}`, `n` = `BeaFile::$id`), nur Anlagen, nur wenn
   die SHA-256 noch zum Einlesen passt (sonst 409).
 
-Die Zuordnung braucht die Modelle der Anwendung in `config/bea.php`:
+Auswahl und Vorschlag in `bea.select` brauchen die Modelle der Anwendung in `config/bea.php`:
 
 ```php
 'assign' => [
@@ -161,10 +169,18 @@ Die Zuordnung braucht die Modelle der Anwendung in `config/bea.php`:
 ],
 ```
 
-Die **erste Zuordnung** einer Nachricht ist die Hauptzuordnung: An sie gehen
-die übernommenen Dateien per `NewFiles`-Event des Files-Packages (wie bei
-Upload und Scan-Import). Ohne Zuordnung bleiben die Dateien bei der
-beA-Nachricht und werden mit der ersten Zuordnung nachgereicht.
+Jede Nachricht hat **eine Zuordnung** (`bea_messages.model`, nullable): beim
+Einlesen den User, der einliest (bei `bea:import` auf der Konsole keine), bzw.
+das Modell, aus dem heraus eingelesen wird; nach der Übernahme das Modell,
+das die Anwendung im Listener auf `BeaFilesAccepted` anlegt und mit
+`$message->assignTo($dokument)` einträgt. Die übernommenen Files gehören
+immer der beA-Nachricht (`model_type` = `BeaMessage`, empfangener Stand als
+Beweis) und werden nicht umgehängt; das zugeordnete Modell erreicht sie über
+`bea_messages.model` (z. B. als zusätzlicher Besitzer in `files.listing`).
+Ein `NewFiles`-Event löst die Übernahme nicht aus.
+
+Die in `bea.select` gewählten Modelle (Akte, Name …) werden nicht gespeichert:
+sie gehen als `context` mit dem Event `BeaFilesAccepted` an die Anwendung.
 
 ## Empfangene und gesendete Nachrichten
 
@@ -179,7 +195,7 @@ an `BEA_OWN_SAFE_IDS`.
 - `aktenzeichen` ist immer das **eigene** Aktenzeichen, `aktenzeichen_absender`
   das der Gegenseite – bei gesendeten Nachrichten also getauscht gegenüber
   der Exportansicht (die Rohwerte bleiben in `data.export_fields`). So greifen
-  Vorschlag und Vorab-Zuordnung zur Akte für beide Richtungen.
+  Vorschlag und Aktensuche anhand des Aktenzeichens für beide Richtungen.
 - Gesendete Nachrichten tragen in Listen, Modal und Detailseite ein Badge
   „gesendet“.
 
@@ -201,48 +217,57 @@ an `BEA_OWN_SAFE_IDS`.
 
 Gefunden werden Nachrichten, die dem Modell zugeordnet sind, und solche, aus
 denen eine Datei des Modells stammt. Die Knöpfe „Eingang“ und „Hochladen“
-geben das Modell mit, sodass die Zuordnung vorbelegt ist.
+geben das Modell mit: die eingelesene Nachricht wird ihm zugeordnet.
 
 ## Events
 
 | Event | Wann | Inhalt |
 |---|---|---|
 | `BeaMessageImported` | nach dem Einlesen | `message`, `aktenzeichen`, `aktenzeichenAbsender`, `data` – noch **keine** Dateien |
-| `Nfgarching\Files\Events\NewFiles` | bei der Übernahme, wenn eine Hauptzuordnung besteht | `fileIds`, `model_type`, `model_id`, `subject`, `data` (`source: bea`, beA-ID, Aktenzeichen, alle Zuordnungen) |
-| `BeaFilesAccepted` | bei jeder Übernahme | `message`, `fileIds`, `assignments` (alle, Hauptzuordnung zuerst) |
+| `BeaFilesAccepted` | bei jeder Übernahme | `message` (mit `model`), `fileIds`, `context` (gewählte Akte, Namen … als `[type, id]`), `subject` |
 
-Vorab-Zuordnung im eigenen Listener (erscheint bei der Übernahme als Zuordnung):
+Übernahme im eigenen Listener, z. B. als Dokument:
 
 ```php
-use Nfgarching\Bea\Events\BeaMessageImported;
+use Nfgarching\Bea\Events\BeaFilesAccepted;
 
-class AssignBeaMessage
+class AcceptBeaMessage
 {
-    public function handle(BeaMessageImported $event): void
+    public function handle(BeaFilesAccepted $event): void
     {
-        // Das Aktenzeichen ist Freitext des Absenders – ggf. normalisieren
-        preg_match('#\d{2}/\d{3,5}#', (string) $event->aktenzeichen, $match);
-        $akte = Akte::where('aktenzeichen', $match[0] ?? $event->aktenzeichen)->first();
+        $message = $event->message;
+        $dokument = $message->model instanceof Dokument
+            ? $message->model                       // Nachholen: dasselbe Dokument
+            : Dokument::create([/* Akte aus $event->context … */]);
 
-        $akte && $event->message->assignTo($akte);
+        // Files bleiben bei der Nachricht; das Dokument findet sie über die Zuordnung
+        $message->assignTo($dokument);
     }
 }
 ```
 
-Mit `'match'` in den Zuordnungstypen (siehe oben) schlägt das Package die
-Akte auch ohne eigenen Listener vor.
+Mit `'match'` in den Zuordnungstypen (siehe oben) schlägt `bea.select` die
+Akte anhand des Aktenzeichens vor.
 
 ### Models
 
-- `BeaArchive` – ZIP auf der Disk: `disk`, `path`, `original_name`, `sha256`, `size`, `source`.
+- `Data\BeaZip` (keine Tabelle) – Original-ZIP aus den Spalten `archive_disk`, `archive_path`,
+  `archive_name`, `archive_sha256`, `archive_size`, `archive_source`; `$message->archive`.
+  Mehrere Nachrichten einer ZIP verweisen auf dieselbe Datei.
 - `BeaMessage` – `status` (`ingested`/`accepted`), Kopfdaten, `integrity`,
-  `vhn_signature`, `data`; `archive`, `messageFiles`, `assignments`,
-  `verifications`, `assignTo($model)`, `primaryAssignment()`, `acceptedFiles()`,
-  Scopes `forOwners()` und `search()`.
-- `BeaMessageFile` – jede Datei der ZIP: `role` (`attachment`/`signature`/`meta`),
-  `zip_path`, `category`, `suggested`, `signed`, `signature_name`, `sha256`,
-  `vhn_covered`, `file_id` und `accepted_at` nach der Übernahme.
-- `BeaAssignment`, `BeaVerification`.
+  `vhn_signature`, `data`, Zuordnung `model` (MorphTo); `archive`,
+  `verifications`, `files()` (übernommene Files, MorphMany), `messageFiles()`
+  (alle Dateien der ZIP aus `data.files`), `attachmentFiles()`,
+  `suggestedFiles()`, `attachments_count`, `assignTo($model)`, `unassign()`,
+  `isAssigned()` (einem Modell zugeordnet, nicht nur dem User),
+  `acceptedFiles()`, Scopes `assigned()`, `forOwners()` und `search()`.
+- `Data\BeaFile` (keine Tabelle) – eine Datei der ZIP aus `data.files`:
+  `id` (laufende Nummer, Schlüssel für Auswahl und Vorschau), `role`
+  (`attachment`/`signature`/`meta`), `zip_path`, `category`, `suggested`,
+  `signed`, `signature_name`, `sha256`, `vhn_covered`; übernommen, wenn die
+  Nachricht ein File mit diesem `custom_properties.bea.zip_path` hat
+  (`file`, `fileId()`, `acceptedAt()`).
+- `BeaVerification`.
 
 ## Prüfungen und Nachvollziehbarkeit
 
