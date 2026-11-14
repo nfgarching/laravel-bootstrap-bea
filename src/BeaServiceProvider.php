@@ -14,6 +14,7 @@ use Nfgarching\Bea\Livewire\Select;
 use Nfgarching\Bea\Livewire\Upload;
 use Nfgarching\Core\Modals\ModalRegistry;
 use Nfgarching\Core\Navigation\NavbarNavigation;
+use Nfgarching\Core\Navigation\SidebarNavigation;
 
 class BeaServiceProvider extends ServiceProvider
 {
@@ -53,6 +54,14 @@ class BeaServiceProvider extends ServiceProvider
         if (class_exists(NavbarNavigation::class)) {
             $this->app->make(NavbarNavigation::class)->item(
                 'bea::parts.navitems',
+                order: 95,
+                when: fn (): bool => Route::has('bea.index'),
+            );
+        }
+
+        if (class_exists(SidebarNavigation::class)) {
+            $this->app->make(SidebarNavigation::class)->section(
+                'bea::parts.sidebar',
                 order: 95,
                 when: fn (): bool => Route::has('bea.index'),
             );
