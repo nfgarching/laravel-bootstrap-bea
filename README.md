@@ -123,24 +123,23 @@ keine URL und keinen öffentlichen Link.
 Namen zuordnen, Betreff für die Übergabe festlegen. Nicht gewählte Dateien
 lassen sich später nachholen.
 
-### Mehrere Nachrichten auf einmal (Modal/Popup)
+### Mehrere Nachrichten auf einmal (Popup/iframe-Modal)
 
 `<livewire:bea.pending />` listet alle eingelesenen, noch nicht übernommenen
 Nachrichten. Markierte Nachrichten werden in einem Schritt mit ihren
 **vorgeschlagenen** Dateien übernommen, wie der Scan-Import des Files-Packages.
 
-- **Modal:** über die ModalRegistry in jedes Layout eingebunden
-  (`bea::parts.modals`), geöffnet per Livewire-Event
-  `openModalBeaPending` mit `data: {model_type, model_id, data}`.
-- **Popup:** Route `bea.pending` (`?model_type=…&model_id=…&data=…`).
-- Mit `<x-button.dispatch modalName="openModalBeaPending" :href="route('bea.pending')" …>`
-  öffnet ein Klick das Modal, **SHIFT** das Popup, CTRL einen Tab.
+- Route `bea.pending` (`?model_type=…&model_id=…&data=…`, `data` als JSON).
+- Mit `<x-button.dispatch frame frameSize="xl" :href="route('bea.pending')" …>`
+  (core) öffnet ein Klick die Seite im generischen iframe-Modal, **SHIFT** als
+  Popup, CTRL in einem Tab.
 - Standard ist `model_type` = `bea.default_model_type` (`App\Models\User`)
   ohne ID: die Zuordnung bleibt beim User. Ein aufrufendes Modell (z. B. ein
   Dokument) wird die Zuordnung der Nachricht, sofern es in `bea.assign.types`
   steht; Schlüssel aus `data` gibt `bea.assign.context` als Kontext an das
   Event `BeaFilesAccepted` (`'Register_ID' => ['type' => 'akte', 'column' => 'ID']`).
-- Danach lädt die Seite (Modal) bzw. das aufrufende Fenster (Popup) neu.
+- Danach lädt `reloadOpener()` (Layout `layout::popup`) das Hauptfenster (Modal)
+  bzw. das aufrufende Fenster (Popup) neu; ohne Opener geht es auf `/bea`.
 - **Vorschau:** Der Pfeil vor einer Nachricht klappt ihre Anlagen auf und
   zeigt gleich die erste vorgeschlagene PDF im Modal (Klick: Vorschau,
   SHIFT: Popup, CTRL: Tab). Die Datei kommt direkt aus der Original-ZIP über

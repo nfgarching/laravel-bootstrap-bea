@@ -1,11 +1,7 @@
-{{-- Liste der Komponente bea.pending (Modal und Popup) --}}
+{{-- Liste der Komponente bea.pending --}}
 @php
     $types = app(\Nfgarching\Bea\Services\AssignTypes::class);
 @endphp
-
-@if ($modal && $this->contextLabel)
-    <p class="small text-muted mb-2"><i class="bi bi-link-45deg"></i> Zuordnen zu: {{ $this->contextLabel }}</p>
-@endif
 
 @if ($error)
     <div class="alert alert-danger py-2 small" style="white-space: pre-line">{{ $error }}</div>

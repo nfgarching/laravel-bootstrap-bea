@@ -2,7 +2,7 @@
 
 <li class="btn-group nav-item w-100">
     <x-nav.link :href="route('bea.index')" :active="request()->routeIs('bea.index', 'bea.show', 'bea.select')">
-        <i class="bi bi-envelope-paper"></i> {{ __('beA-Nachrichten') }}
+        <i class="bi bi-envelope-paper"></i> &nbsp {{ __('beA-Nachrichten') }}
     </x-nav.link>
     <a class="nav-link dropdown-toggle ms-auto" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false"
         aria-label="Menü beA"></a>
@@ -16,15 +16,14 @@
             </li>
         @endif
 
-        {{-- Klick: Modal (bea::parts.modals), SHIFT: Popup --}}
+        {{-- Klick => iframe-Modal (xl), SHIFT => Popup, CTRL => Tab --}}
         @if (Route::has('bea.pending'))
             <li class="dropdown-item">
-                <button type="button" class="btn btn-link nav-link p-0" x-data
-                    @click="$event.shiftKey
-                        ? window.open('{{ route('bea.pending') }}', '_blank', 'width=1000,height=800')
-                        : Livewire.dispatch('openModalBeaPending', { data: {} })">
+                <x-button.dispatch frame frameSize="xl" :href="route('bea.pending')"
+                    class="btn btn-link nav-link p-0" type="" popup="width=1000,height=800"
+                    tooltip="Nicht übernommene beA-Nachrichten">
                     <i class="bi bi-inbox"></i> {{ __('Nicht übernommen') }}
-                </button>
+                </x-button.dispatch>
             </li>
         @endif
 

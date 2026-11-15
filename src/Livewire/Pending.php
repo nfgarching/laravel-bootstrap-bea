@@ -6,10 +6,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Js;
 use Illuminate\View\View;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\On;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Nfgarching\Bea\Data\BeaFile;
@@ -22,11 +22,8 @@ use Nfgarching\Bea\Services\BeaImporter;
  * in einem Schritt übernehmen – mit den vorgeschlagenen Dateien, wie
  * Nfgarching\Files\Livewire\Import für Scans.
  *
- * Zwei Aufrufwege, eine Komponente:
- *  - Modal: über die ModalRegistry in jedes Layout eingebunden
- *    (<livewire:bea.pending :modal="true" />), geöffnet per Event
- *    „openModalBeaPending“ mit data: {model_type, model_id, data}.
- *  - Popup: Route bea.pending (?model_type=…&model_id=…&data=…).
+ * Aufruf: Route bea.pending (?model_type=…&model_id=…&data=…) – als Popup
+ * oder im generischen iframe-Modal (<x-button.dispatch frame …>, core).
  *
  * Standard ist model_type App\Models\User ohne ID: Die Zuordnung der
  * Nachricht bleibt, wie sie ist (der User). Kommt der Aufruf aus einem Modell
@@ -39,15 +36,6 @@ use Nfgarching\Bea\Services\BeaImporter;
 class Pending extends Component
 {
     use WithPagination;
-
-    public const string MODAL_NAME = 'modalBeaPending';
-
-    public bool $modal = false;
-
-    /** Im Modal-Modus wird die Liste erst nach dem Öffnen abgefragt */
-    public bool $open = false;
-
-    public string $modalName = self::MODAL_NAME;
 
     public string $modelType = 'App\\Models\\User';
 
@@ -82,39 +70,14 @@ class Pending extends Component
     /** @var list<string> */
     private const array SORTABLE = ['dated_at', 'subject', 'sender_name', 'aktenzeichen'];
 
-    public function mount(bool $modal = false): void
+    public function mount(): void
     {
-        $this->modal = $modal;
         $this->modelType = (string) config('bea.default_model_type', 'App\\Models\\User');
-
-        if ($modal) {
-            return;
-        }
-
-        $this->open = true;
         $this->applyContext([
             'model_type' => request()->input('model_type'),
             'model_id' => request()->input('model_id'),
             'data' => request()->input('data', []),
         ]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $data  {model_type, model_id, data}
-     */
-    #[On('openModalBeaPending')]
-    public function openModal(array $data = []): void
-    {
-        $this->reset('selectedMessages', 'selectAll', 'error', 'search', 'expanded', 'previewFile');
-        $this->modelType = (string) config('bea.default_model_type', 'App\\Models\\User');
-        $this->modelId = 0;
-        $this->data = [];
-        $this->applyContext($data);
-        $this->resetPage('pendingPage');
-
-        $this->open = true;
-        unset($this->messages);
-        $this->dispatch('show-modal', modalName: $this->modalName);
     }
 
     /**
@@ -137,10 +100,6 @@ class Pending extends Component
     #[Computed]
     public function messages(): LengthAwarePaginator
     {
-        if (! $this->open) {
-            return new LengthAwarePaginator([], 0, $this->perPage);
-        }
-
         $sort = in_array($this->sort, self::SORTABLE, true) ? $this->sort : 'dated_at';
         $direction = $this->direction === 'asc' ? 'asc' : 'desc';
 
@@ -297,21 +256,9 @@ class Pending extends Component
             return;
         }
 
-        if ($this->modal) {
-            $this->dispatch('hide-modal', modalName: $this->modalName);
-            $this->js('window.location.reload()');
-
-            return;
-        }
-
-        $fallback = json_encode(route('bea.index'));
-        $this->js("if (window.opener && !window.opener.closed) {
-                window.opener.location.reload();
-                window.opener.focus();
-            } else {
-                window.open({$fallback});
-            }
-            window.close();");
+        // Popup: aufrufendes Fenster neu laden, iframe-Modal: Hauptfenster neu laden;
+        // ohne Opener (Tab) auf die Übersicht (reloadOpener() im Layout layout::popup).
+        $this->js('reloadOpener('.Js::from(route('bea.index')).')');
     }
 
     /**

@@ -11,7 +11,6 @@ use Nfgarching\Bea\Events\BeaMessageImported;
 use Nfgarching\Bea\Livewire\Pending;
 use Nfgarching\Bea\Models\BeaMessage;
 use Nfgarching\Bea\Services\BeaImporter;
-use Nfgarching\Core\Modals\ModalRegistry;
 use Nfgarching\Files\Events\NewFiles;
 use Nfgarching\Files\Jobs\ProcessFile;
 use Nfgarching\Files\Models\File;
@@ -95,28 +94,6 @@ test('Kontext aus data geht über bea.assign.context an das Event', function () 
     Event::assertDispatched(BeaFilesAccepted::class, fn (BeaFilesAccepted $event) => $event->context === [
         ['type' => $this->user->getMorphClass(), 'id' => $this->user->id],
     ]);
-});
-
-test('das Modal fragt erst nach dem Öffnen ab und übernimmt den Kontext aus dem Event', function () {
-    Livewire::test(Pending::class, ['modal' => true])
-        ->assertSet('open', false)
-        ->assertDontSee($this->message->subject)
-        ->dispatch('openModalBeaPending', data: ['model_type' => User::class, 'model_id' => (string) $this->user->id, 'data' => []])
-        ->assertSet('open', true)
-        ->assertSet('modelType', User::class)
-        ->assertSet('modelId', $this->user->id)
-        ->assertDispatched('show-modal', modalName: Pending::MODAL_NAME)
-        ->assertSee($this->message->subject)
-        ->assertSee('Erika Beispiel')
-        ->set('selectedMessages', [(string) $this->message->id])
-        ->call('importMessages')
-        ->assertDispatched('hide-modal', modalName: Pending::MODAL_NAME);
-
-    expect($this->message->fresh()->status)->toBe(BeaMessage::STATUS_ACCEPTED);
-});
-
-test('die Modal-Registrierung bindet die Komponente ein', function () {
-    expect(app(ModalRegistry::class)->visibleModals())->toContain('bea::parts.modals');
 });
 
 test('eine Anlage wird zur Vorschau direkt aus der Original-ZIP ausgeliefert', function () {
