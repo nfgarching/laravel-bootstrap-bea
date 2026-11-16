@@ -151,14 +151,16 @@ return [
     'own_safe_ids' => array_values(array_filter(array_map('trim', explode(',', (string) env('BEA_OWN_SAFE_IDS', ''))))),
 
     /*
-    | Herkunftsnachweis (vhn.xml.p7s) mit OpenSSL prüfen. Ohne trust wird nur
-    | die Signatur mathematisch geprüft (Status signature_ok); mit einer
-    | PEM-Datei der BNotK-Wurzel-/Zwischenzertifikate auch die Kette (valid).
+    | Herkunftsnachweis (vhn.xml.p7s) mit OpenSSL prüfen. Mit der PEM-Datei
+    | der BNotK-Zertifikate wird auch die Kette geprüft (valid); Standard ist
+    | die mitgelieferte „beA VHN CA 2017“ (resources/certs, als Anker per
+    | -partial_chain). BEA_VHN_TRUST= (leer) prüft nur mathematisch
+    | (signature_ok); relative Pfade gelten ab base_path().
     */
     'vhn' => [
         'verify' => env('BEA_VHN_VERIFY', true),
         'openssl' => env('BEA_OPENSSL_BINARY', 'openssl'),
-        'trust' => env('BEA_VHN_TRUST'),
+        'trust' => env('BEA_VHN_TRUST', dirname(__DIR__).'/resources/certs/2021-09-09-bea-vhn-ca-2017.pem'),
     ],
 
     'upload' => [

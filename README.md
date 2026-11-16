@@ -285,8 +285,13 @@ jeder Übernahme und auf Knopfdruck („Erneut prüfen“ im Tab **Prüfung**, b
 Eine Übernahme wird abgebrochen, wenn die ZIP oder eine gewählte Datei nicht
 mehr dem Stand beim Einlesen entspricht.
 
-Für `valid` die Wurzel- und Zwischenzertifikate der BNotK-Zertifizierungsstelle
-als PEM-Datei ablegen und `BEA_VHN_TRUST=/pfad/zu/bnotk-ca.pem` setzen.
+Für `valid` liegt das Zwischenzertifikat „beA VHN CA 2017“ der BNotK (Aussteller
+der VHN-Signaturzertifikate, gültig bis 2037) unter
+`resources/certs/2021-09-09-bea-vhn-ca-2017.pem` und ist Standard für
+`bea.vhn.trust`. Es dient per `openssl -partial_chain` selbst als Vertrauensanker,
+die Wurzel „SAFE Root CA 2017“ wird nicht benötigt. Eine andere PEM-Datei über
+`BEA_VHN_TRUST` (absolut oder relativ zum Projekt); `BEA_VHN_TRUST=` (leer)
+schaltet die Kettenprüfung ab.
 Signaturen einzelner Anhänge (`*.p7s`) werden nicht selbst geprüft; die Datei
 bleibt dafür samt Signatur im Original erhalten.
 
@@ -301,7 +306,7 @@ bleibt dafür samt Signatur im Original erhalten.
 | `BEA_IMPORT_SCHEDULE` | – | Cron-Ausdruck für `bea:import` |
 | `BEA_FILES_COLLECTION` | `bea` | `collection_name` der übernommenen Dateien |
 | `BEA_VHN_VERIFY` | `true` | VHN-Signatur mit OpenSSL prüfen |
-| `BEA_VHN_TRUST` | – | PEM-Datei der BNotK-Zertifikate |
+| `BEA_VHN_TRUST` | `resources/certs/2021-09-09-bea-vhn-ca-2017.pem` (Package) | PEM-Datei der BNotK-Zertifikate; leer = nur mathematische Prüfung |
 | `BEA_OWN_SAFE_IDS` | – | eigene SAFE-IDs (kommagetrennt); erkennt gesendete Nachrichten, falls der Export kein Journal hat |
 | `BEA_UPLOAD_MAX_KB` | `204800` | maximale ZIP-Größe beim Upload |
 

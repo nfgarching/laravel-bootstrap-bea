@@ -9,7 +9,8 @@ use Illuminate\Support\Str;
  * Prüft die CMS-Signatur des Herkunftsnachweises (vhn.xml.p7s über vhn.xml).
  *
  * Status:
- *  valid         Signatur gültig, Kette bis zu einem hinterlegten Wurzelzertifikat
+ *  valid         Signatur gültig, Kette bis zu einem hinterlegten Zertifikat (bea.vhn.trust;
+ *                -partial_chain: auch eine Zwischen-CA wie „beA VHN CA 2017“ genügt als Anker)
  *  signature_ok  Signatur mathematisch gültig, Kette nicht geprüft (kein bea.vhn.trust)
  *  invalid       Signatur ungültig oder Kette nicht vertrauenswürdig
  *  missing       vhn.xml oder vhn.xml.p7s fehlt
@@ -31,14 +32,14 @@ class VhnVerifier
         }
 
         $binary = (string) config('bea.vhn.openssl', 'openssl');
-        $trust = config('bea.vhn.trust');
+        $trust = $this->trustFile();
 
         $signerFile = tempnam(sys_get_temp_dir(), 'vhn');
         $command = [$binary, 'cms', '-verify', '-binary', '-inform', 'DER',
             '-in', $signaturePath, '-content', $vhnPath, '-out', '/dev/null', '-purpose', 'any',
             '-signer', $signerFile];
-        if ($trust && is_readable($trust)) {
-            array_push($command, '-CAfile', $trust);
+        if ($trust) {
+            array_push($command, '-CAfile', $trust, '-partial_chain');
         } else {
             $command[] = '-noverify';
         }
@@ -61,7 +62,24 @@ class VhnVerifier
             return ['status' => 'invalid', 'error' => Str::limit(trim($output), 500)] + $certificate;
         }
 
-        return ['status' => $trust && is_readable($trust) ? 'valid' : 'signature_ok'] + $certificate;
+        return ['status' => $trust ? 'valid' : 'signature_ok'] + $certificate;
+    }
+
+    /**
+     * PEM-Datei aus bea.vhn.trust; relative Pfade gelten ab base_path(),
+     * damit derselbe Eintrag auf dem Host und im Container funktioniert.
+     */
+    private function trustFile(): ?string
+    {
+        $trust = (string) config('bea.vhn.trust');
+        if ($trust === '') {
+            return null;
+        }
+        if (! str_starts_with($trust, '/')) {
+            $trust = base_path($trust);
+        }
+
+        return is_readable($trust) ? $trust : null;
     }
 
     /**
