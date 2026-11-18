@@ -2,7 +2,7 @@
 
 <li class="btn-group nav-item w-100">
     <x-nav.link :href="route('bea.index')" :active="request()->routeIs('bea.index', 'bea.show', 'bea.select')">
-        <i class="bi bi-envelope-paper"></i> &nbsp {{ __('beA-Nachrichten') }}
+        <i class="bi bi-envelope-paper"></i> &nbsp {{ __('beA') }}
     </x-nav.link>
     <a class="nav-link dropdown-toggle ms-auto" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false"
         aria-label="Menü beA"></a>
