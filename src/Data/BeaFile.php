@@ -97,6 +97,14 @@ final class BeaFile
         return in_array(strtolower(pathinfo($this->name, PATHINFO_EXTENSION)), $excluded, true);
     }
 
+    /**
+     * Im Browser darstellbar (PDF, Bilder, Text) – sonst nur Download.
+     */
+    public function isPreviewable(): bool
+    {
+        return in_array(strtolower(pathinfo($this->name, PATHINFO_EXTENSION)), ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'txt', 'html', 'htm', 'xml'], true);
+    }
+
     public function fileId(): ?int
     {
         return $this->file?->id;

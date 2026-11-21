@@ -2,7 +2,7 @@
     <div class="frame-hide"><br></div>
     <x-card>
         <x-slot name="headerLeft">
-            <h5 class="card-title mb-0"><i class="bi bi-envelope-paper"></i> beA – nicht übernommene Nachrichten</h5>
+            <h5 class="card-title mb-0"><i class="{{ config('bea.icon', 'bi bi-bootstrap') }}"></i> beA – nicht übernommene Nachrichten</h5>
         </x-slot>
 
         <x-slot name="headerRight">
@@ -17,4 +17,7 @@
             </div>
         </x-slot>
     </x-card>
+
+    {{-- Vorschau-Modal + beaFilePreview() für bea::parts.file-link (aufgeklappte Anlagen) --}}
+    @include('bea::parts.file-modal')
 </div>

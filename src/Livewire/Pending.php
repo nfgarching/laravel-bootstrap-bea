@@ -62,8 +62,13 @@ class Pending extends Component
     /** Aufgeklappte Nachricht: zeigt ihre Anlagen */
     public ?int $expanded = null;
 
-    /** Anlage (BeaFile::$id) in der Vorschau */
-    public ?int $previewFile = null;
+    /**
+     * Einzeln gewählte Dateien je Nachricht (BeaFile::$id als String).
+     * Ohne Eintrag gelten die Vorschläge; ein Eintrag entsteht beim Aufklappen.
+     *
+     * @var array<int|string, list<string>>
+     */
+    public array $files = [];
 
     protected string $paginationTheme = 'bootstrap';
 
@@ -141,32 +146,65 @@ class Pending extends Component
     public function toggle(int $messageId): void
     {
         $this->expanded = $this->expanded === $messageId ? null : $messageId;
-        $this->previewFile = null;
         unset($this->expandedFiles);
 
-        // Erste vorgeschlagene PDF gleich anzeigen
-        if ($this->expanded) {
-            $this->previewFile = $this->expandedFiles
-                ->first(fn (BeaFile $row) => $row->suggested && $this->isPreviewable($row))?->id;
+        if ($this->expanded && ! array_key_exists($messageId, $this->files)) {
+            $this->files[$messageId] = $this->suggestedIds($messageId);
         }
     }
 
-    public function preview(int $fileId): void
+    /**
+     * Dateiauswahl einer Nachricht geändert: die Nachricht wird mit ausgewählt,
+     * sobald mindestens eine Datei gewählt ist.
+     */
+    public function updatedFiles(mixed $value, ?string $key = null): void
     {
-        $this->previewFile = $this->expandedFiles->contains('id', $fileId) ? $fileId : null;
+        $messageId = (string) strtok((string) $key, '.');
+        if ($messageId !== '' && ($this->files[$messageId] ?? []) !== []
+            && ! in_array($messageId, $this->selectedMessages, true)) {
+            $this->selectedMessages[] = $messageId;
+        }
     }
 
-    public function closePreview(): void
+    public function selectSuggested(int $messageId): void
     {
-        $this->previewFile = null;
+        $this->files[$messageId] = $this->suggestedIds($messageId);
+    }
+
+    public function selectAllFiles(int $messageId): void
+    {
+        $this->files[$messageId] = (BeaMessage::find($messageId)?->attachmentFiles() ?? collect())
+            ->filter(fn (BeaFile $row) => $row->isSelectable())
+            ->map(fn (BeaFile $row) => (string) $row->id)->values()->all();
+        $this->updatedFiles(null, (string) $messageId);
+    }
+
+    public function selectNoFiles(int $messageId): void
+    {
+        $this->files[$messageId] = [];
     }
 
     /**
-     * Im Browser darstellbar (PDF, Bilder, Text) – sonst nur Download.
+     * Zu übernehmende Dateien: die einzeln gewählten, sonst die Vorschläge.
+     *
+     * @return list<int>
      */
-    public function isPreviewable(BeaFile $row): bool
+    public function fileIdsFor(BeaMessage $message): array
     {
-        return in_array(strtolower(pathinfo((string) $row->name, PATHINFO_EXTENSION)), ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'txt'], true);
+        $ids = array_key_exists($message->id, $this->files)
+            ? $this->files[$message->id]
+            : $message->suggestedFiles()->pluck('id')->all();
+
+        return array_values(array_map('intval', $ids));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function suggestedIds(int $messageId): array
+    {
+        return (BeaMessage::find($messageId)?->suggestedFiles() ?? collect())
+            ->map(fn (BeaFile $row) => (string) $row->id)->values()->all();
     }
 
     public function updatedSelectAll(bool $value): void
@@ -182,7 +220,6 @@ class Pending extends Component
     {
         $this->selectAll = false;
         $this->expanded = null;
-        $this->previewFile = null;
         $this->resetPage('pendingPage');
     }
 
@@ -226,14 +263,15 @@ class Pending extends Component
             ->get();
 
         $accepted = [];
+        $routes = [];
         $errors = [];
         foreach ($messages as $message) {
-            $fileIds = $message->suggestedFiles()
-                ->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+            $fileIds = $this->fileIdsFor($message);
 
             try {
                 $result = $importer->accept($message, $fileIds, $context, target: $target);
                 $accepted[] = '#'.$message->id.' ('.count($result['files']).' Datei(en))';
+                $routes[] = $result['route'];
                 if ($result['failed'] !== []) {
                     $errors[] = ($message->bea_id ?? '#'.$message->id).': nicht übernommen: '.implode(', ', $result['failed']);
                 }
@@ -247,7 +285,7 @@ class Pending extends Component
         $this->selectedMessages = [];
         $this->selectAll = false;
         $this->expanded = null;
-        $this->previewFile = null;
+        $this->files = [];
         unset($this->messages);
 
         if ($errors !== []) {
@@ -256,7 +294,16 @@ class Pending extends Component
             return;
         }
 
-        // Popup: aufrufendes Fenster neu laden, iframe-Modal: Hauptfenster neu laden;
+        // Genau eine Nachricht: das angelegte Modell anzeigen (Route aus dem Listener,
+        // wie bea.select und files.import) – aus einem Modell heraus im aufrufenden
+        // Fenster, sonst in einem neuen Fenster (finishPopup() im Layout layout::popup).
+        if (count($routes) === 1 && $routes[0]) {
+            $this->js('finishPopup('.Js::from($routes[0]).', '.Js::from($target !== null).')');
+
+            return;
+        }
+
+        // Mehrere: Popup: aufrufendes Fenster neu laden, iframe-Modal: Hauptfenster neu laden;
         // ohne Opener (Tab) auf die Übersicht (reloadOpener() im Layout layout::popup).
         $this->js('reloadOpener('.Js::from(route('bea.index')).')');
     }
@@ -269,21 +316,7 @@ class Pending extends Component
      */
     private function contextModels(): array
     {
-        $types = app(AssignTypes::class);
-        $models = [];
-
-        foreach ((array) config('bea.assign.context', []) as $key => $target) {
-            $value = $this->data[$key] ?? null;
-            if (blank($value) || ! is_array($target)) {
-                continue;
-            }
-            $model = $types->findBy((string) ($target['type'] ?? ''), (string) ($target['column'] ?? ''), $value);
-            if ($model && ! collect($models)->contains(fn (Model $m) => $m->is($model))) {
-                $models[] = $model;
-            }
-        }
-
-        return $models;
+        return app(AssignTypes::class)->contextModels($this->data);
     }
 
     public function render(): View

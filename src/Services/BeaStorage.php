@@ -2,8 +2,11 @@
 
 namespace Nfgarching\Bea\Services;
 
+use Closure;
 use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Storage;
+use League\Flysystem\Local\LocalFilesystemAdapter;
 use Nfgarching\Bea\Data\BeaZip;
 use Nfgarching\Bea\Exceptions\InvalidBeaArchive;
 use Nfgarching\Bea\Models\BeaMessage;
@@ -152,6 +155,46 @@ class BeaStorage
         }
 
         return $this->localCopy($archive->disk, $archive->path);
+    }
+
+    /**
+     * Ruft $callback mit einem lokalen Pfad der Original-ZIP auf (nur lesen!):
+     * bei lokaler Disk die Datei selbst, sonst eine Temp-Kopie, die danach
+     * gelöscht wird. Der Aufrufer löscht den Pfad nie selbst.
+     *
+     * @template T
+     *
+     * @param  Closure(string): T  $callback
+     * @return T
+     */
+    public function withLocalArchive(BeaZip $archive, Closure $callback): mixed
+    {
+        $direct = $this->directPath($archive->disk, $archive->path);
+        if ($direct !== null) {
+            return $callback($direct);
+        }
+
+        $local = $this->localArchive($archive);
+        try {
+            return $callback($local);
+        } finally {
+            @unlink($local);
+        }
+    }
+
+    /**
+     * Echter Pfad einer Datei auf einer lokalen Disk, sonst null.
+     */
+    private function directPath(string $disk, string $path): ?string
+    {
+        $filesystem = Storage::disk($disk);
+        if (! $filesystem instanceof FilesystemAdapter || ! $filesystem->getAdapter() instanceof LocalFilesystemAdapter) {
+            return null;
+        }
+
+        $full = $filesystem->path($path);
+
+        return is_file($full) ? $full : null;
     }
 
     /**

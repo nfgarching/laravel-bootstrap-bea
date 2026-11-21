@@ -121,27 +121,35 @@ test('der Eingang listet ZIPs der Disk und liest die markierten ein', function (
     expect(BeaMessage::first()->model->is($this->user))->toBeTrue();
 });
 
-test('die Auswahl ist mit den Vorschlägen vorbelegt und übergibt die Zuordnung als Kontext', function () {
+test('die Auswahl ist mit den Vorschlägen vorbelegt, zeigt eine Vorschau und übergibt den Kontext des Aufrufs', function () {
     $message = app(BeaImporter::class)->ingest(beaFixtureZip())['imported'][0];
     $suggested = $message->messageFiles()->where('suggested', true)->pluck('id')->map(fn ($id) => (string) $id)->sort()->values()->all();
+    config(['bea.assign.context' => ['user_id' => ['type' => 'user', 'column' => 'id']]]);
 
-    $component = Livewire::test(Select::class, ['messageId' => $message->id])
+    // Popup-Seite (iframe-Modal): ohne Navigation, keine Suche nach Modellen der Anwendung
+    $this->get(route('bea.select', $message))->assertOk()
+        ->assertSeeLivewire(Select::class)
+        ->assertDontSee('Benutzer suchen');
+
+    $component = Livewire::withQueryParams(['data' => json_encode(['user_id' => $this->user->id])])
+        ->test(Select::class, ['message' => $message])
         ->assertSee('Ladung zum Termin')
         ->assertSee('signiert')
         ->assertDontSee('vhn.xml');
 
     expect(collect($component->get('selected'))->sort()->values()->all())->toBe($suggested);
+    // Vorschau je Anlage im gemeinsamen Fullscreen-Modal
+    $first = $message->attachmentFiles()->first();
+    $component->assertSee('id="beaFileModal"', false)
+        ->assertSee('data-url="'.route('bea.file', ['message' => $message->id, 'messageFile' => $first->id]).'"', false);
 
     $component
-        ->set('search.user', 'Erika')
-        ->assertSee('Erika Beispiel')
-        ->call('addAssignment', 'user', $this->user->id)
         ->call('accept')
-        ->assertRedirect(route('bea.show', ['message' => $message->id, 'tab' => 'dateien']));
+        ->assertSet('error', null)
+        ->assertNoRedirect();
 
     $message->refresh();
     expect($message->status)->toBe('accepted')
-        ->and($message->model->is($this->user))->toBeTrue()
         ->and(File::count())->toBe(2);
     Event::assertDispatched(BeaFilesAccepted::class, fn (BeaFilesAccepted $event) => $event->context === [
         ['type' => $this->user->getMorphClass(), 'id' => $this->user->id],

@@ -17,10 +17,17 @@ use Nfgarching\Files\Models\File;
  * $context trägt, was beim Übernehmen gewählt bzw. mitgegeben wurde (Akte,
  * Namen …); gespeichert wird es nicht. Legt der Listener ein Modell an
  * (z. B. das Dokument), trägt er es mit $message->assignTo() ein.
+ *
+ * $route setzt der Listener auf die Anzeige des angelegten Modells (wie
+ * NewFiles im Files-Package); bea.select öffnet sie danach per finishPopup().
+ * Bleibt sie leer, geht es zurück auf die Nachricht.
  */
 class BeaFilesAccepted
 {
     use Dispatchable, SerializesModels;
+
+    /** Anzeige des Modells, das die Anwendung angelegt hat (z. B. das Dokument) */
+    public ?string $route = null;
 
     /**
      * @param  list<int>  $fileIds  File-IDs der in diesem Schritt übernommenen Dateien

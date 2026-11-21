@@ -6,7 +6,7 @@
     $modal = $modal ?? false;
 @endphp
 <div class="container d-flex flex-wrap gap-2 align-items-center">
-    <h5 class="mb-0 me-auto"><i class="bi bi-envelope-paper"></i> {{ $title }}</h5>
+    <h5 class="mb-0 me-auto"><i class="{{ config('bea.icon', 'bi bi-bootstrap') }}"></i> {{ $title }}</h5>
     <div class="btn-group btn-group-sm">
         <a class="btn btn-outline-secondary" href="{{ route($listRoute ?? 'bea.index', $context) }}"><i class="bi bi-list-ul"></i> Nachrichten</a>
         @if ($modal)

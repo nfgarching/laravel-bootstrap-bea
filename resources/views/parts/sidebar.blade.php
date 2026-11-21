@@ -2,7 +2,7 @@
 
 <li class="btn-group nav-item w-100">
     <x-nav.link :href="route('bea.index')" :active="request()->routeIs('bea.index', 'bea.show', 'bea.select')">
-        <i class="bi bi-envelope-paper"></i> &nbsp {{ __('beA') }}
+        <i class="{{ config('bea.icon', 'bi bi-bootstrap') }}"></i> &nbsp {{ __('beA') }}
     </x-nav.link>
     <a class="nav-link dropdown-toggle ms-auto" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false"
         aria-label="Menü beA"></a>
@@ -20,9 +20,9 @@
         @if (Route::has('bea.pending'))
             <li class="dropdown-item">
                 <x-button.dispatch frame frameSize="xl" :href="route('bea.pending')"
-                    class="btn btn-link nav-link p-0" type="" popup="width=1000,height=800"
+                    class="btn btn-link nav-link" type="" popup="width=1000,height=800"
                     tooltip="Nicht übernommene beA-Nachrichten">
-                    <i class="bi bi-inbox"></i> {{ __('Nicht übernommen') }}
+                        <i class="{{ config('bea.icon', 'bi bi-bootstrap') }}"></i> {{ __('Übernehmen') }}
                 </x-button.dispatch>
             </li>
         @endif

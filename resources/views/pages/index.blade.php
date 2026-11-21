@@ -1,20 +1,42 @@
 <x-dynamic-component :component="$popup ? 'popup-layout' : 'app-layout'">
+
     <x-slot name="header">
-        @include('bea::parts.header', ['title' => 'beA-Nachrichten', 'modal' => true, 'listRoute' => $listRoute])
-    </x-slot>
+        <div class="container">
+            <div class="btn-group">
+                <x-button type="light">
+                    {{ Str::limit('beA-Nachrichten', 150) }}
+                </x-button>
+            </div>
+            <div class="btn-group btn-group-sm float-end">
+                @if (session('message'))
+                    <div class="alert alert-info py-2">{{ session('message') }}</div>
+                @endif
+                @if ($pending > 0 && !$request->filled('status'))
+                    <x-button type="info" disabled>
+                        <span>{{ $pending }} eingelesene Nachricht(en) warten auf die Übernahme.</span>
+                    </x-button>
+                    <x-button :href="route($listRoute, array_merge($request->except('page'), ['status' => 'ingested']))">
+                        anzeigen
+                    </x-button>
 
-    @if (session('message'))
-        <div class="alert alert-info py-2">{{ session('message') }}</div>
-    @endif
-
-    @if ($pending > 0 && !$request->filled('status'))
-        <div class="alert alert-warning py-2 d-flex align-items-center gap-2">
-            <i class="bi bi-inbox"></i>
-            <span>{{ $pending }} eingelesene Nachricht(en) warten auf die Übernahme.</span>
-            <a class="btn btn-sm btn-outline-dark ms-auto"
-                href="{{ route($listRoute, array_merge($request->except('page'), ['status' => 'ingested'])) }}">anzeigen</a>
+                    {{-- <div class="alert alert-warning py-2 d-flex align-items-center gap-2">
+                        <i class="bi bi-inbox"></i>
+                        <span>{{ $pending }} eingelesene Nachricht(en) warten auf die Übernahme.</span>
+                        <a class="btn btn-sm btn-outline-dark ms-auto"
+                            href="{{ route($listRoute, array_merge($request->except('page'), ['status' => 'ingested'])) }}">anzeigen</a>
+                    </div> --}}
+                @endif
+            </div>
         </div>
-    @endif
+        <hr>
+    </x-slot>
+    {{-- <x-slot name="header">
+        @include('bea::parts.header', [
+            'title' => 'beA-Nachrichten',
+            'modal' => true,
+            'listRoute' => $listRoute,
+        ])
+    </x-slot> --}}
 
     @php
         $activeFilters = [];
@@ -50,7 +72,17 @@
             'id' => 'Einlesen',
         ];
         // Parameter, die Suche und Schnellfilter im Kopf nicht selbst senden
-        $keepParams = ['assigned', 'eeb', 'jahr', 'richtung', 'per_page', 'sort', 'direction', 'model_type', 'model_id'];
+        $keepParams = [
+            'assigned',
+            'eeb',
+            'jahr',
+            'richtung',
+            'per_page',
+            'sort',
+            'direction',
+            'model_type',
+            'model_id',
+        ];
     @endphp
 
     <x-card>
@@ -142,12 +174,12 @@
         @php $token = 'bea' . rand(); @endphp
         <x-table :acc_id="$token" class="table-sm table-hover mb-0 align-middle">
             <x-slot:header>
-                <x-table.head.sort field="id" />
+                {{-- <x-table.head.sort field="id" /> --}}
                 <x-table.head.sort field="dated_at" label="Datum" />
                 <x-table.head.sort field="sender_name" label="Absender / Empfänger" />
                 <x-table.head.sort field="subject" label="Betreff" width="40%" />
+                {{-- <x-table.head.sort field="aktenzeichen_absender" label="AZ Gegenseite" /> --}}
                 <x-table.head.sort field="aktenzeichen" label="Unser AZ" />
-                <x-table.head.sort field="aktenzeichen_absender" label="AZ Gegenseite" />
                 <th class="text-center" title="übernommen / Dateien"><i class="bi bi-paperclip"></i></th>
                 <th></th>
                 <th></th>
@@ -164,23 +196,35 @@
                             ($verification->archive_intact === false || $verification->files_intact === false));
                 @endphp
                 <x-table.row.line1 :acc_id="$token" :row_id="$item->id">
-                    <td>
-                        <a class="btn btn-sm btn-outline-secondary" href="{{ route('bea.show', $showParams) }}">
-                            <i class="bi bi-info-square"></i>
-                        </a>
-                    </td>
-                    <td class="text-nowrap small" title="{{ $item->datedLabel() }}">
-                        {{ $item->dated_at?->timezone(config('app.timezone'))->format('d.m.Y H:i') ?? '–' }}
-                        @if ($item->isOutgoing())
-                            <span class="badge text-bg-info" title="gesendete Nachricht"><i class="bi bi-send"></i></span>
+                    <td nowrap>
+                        <x-button.link :href="route('bea.show', $showParams)" :type="$item->get_btn_type()">
+                            <i class="bi bi-{{ $item->get_btn_icon() }}"></i>
+                            &nbsp;
+                            {{-- {{ $item->get_btn_date() }} --}}
+                            {{ $item->get_btn_date() }}
+                        </x-button.link>
+                        @if (!$item->isAccepted())
+                            @php
+                                $selectUrl = route('bea.select', ['message' => $item, ...array_filter(['model_type' => $modelType, 'model_id' => $modelId])]);
+                            @endphp
+                            @if ($popup)
+                                <a class="btn btn-sm btn-primary" href="{{ $selectUrl }}">
+                                    <i class="bi bi-check2-square"></i> Übernehmen
+                                </a>
+                            @else
+                                <x-button.dispatch class="btn btn-sm btn-" frame frameSize="xl" :href="$selectUrl"
+                                    :data="['title' => 'beA-Nachricht übernehmen']" tooltip="Dateien übernehmen">
+                                    <i class="bi bi-check2-square"></i> Übernehmen
+                                </x-button.dispatch>
+                            @endif
+                        @else
+                            <x-button.model :model="$item->model_type" :modid="$item->model_id" />
                         @endif
                     </td>
                     <td class="small">
                         @if ($item->isOutgoing())
                             {{-- Gesendet: der Absender ist die Kanzlei, interessant ist der Empfänger --}}
-                            <span title="Empfänger (gesendet von {{ $item->sender_name }})">
-                                <i class="bi bi-arrow-right text-info"></i> {{ $item->recipient_name ?? '–' }}
-                            </span>
+                            {{ $item->recipient_name ?? '–' }}
                         @else
                             {{ $item->sender_name }}
                         @endif
@@ -197,16 +241,16 @@
                                 title="Prüfung mit Beanstandung – Einzelheiten in der zweiten Zeile"></i>
                         @endif
                     </td>
+                    {{-- <td class="small">{{ $item->aktenzeichen_absender }}</td> --}}
                     <td class="small text-nowrap">
                         {{ $item->aktenzeichen ?? '–' }}
                         @if ($item->isAssigned())
                             <i class="bi bi-link-45deg text-success" title="zugeordnet"></i>
                         @endif
                     </td>
-                    <td class="small">{{ $item->aktenzeichen_absender }}</td>
                     <td class="text-center small text-nowrap">{{ $item->accepted_count }} /
                         {{ $item->attachments_count }}</td>
-                    <td class="text-end text-nowrap">
+                    {{-- <td class="text-end text-nowrap">
                         @if (!$item->isAccepted())
                             <a class="btn btn-sm btn-primary" href="{{ route('bea.select', $item) }}">
                                 <i class="bi bi-check2-square"></i> Übernehmen
@@ -215,11 +259,14 @@
                             <a class="btn btn-sm btn-outline-secondary" href="{{ route('bea.show', $showParams) }}"><i
                                     class="bi bi-info-square"></i></a>
                         @endif
-                    </td>
+                    </td> --}}
                 </x-table.row.line1>
 
                 <x-table.row.line2 :acc_id="$token" :row_id="$item->id">
-                    <td colspan="7">
+                    <td></td>
+                    <td colspan="4">
+                        AZ Gegenseite {{ $item->aktenzeichen_absender }}
+                        <br>
                         <div class="d-flex flex-wrap gap-2 align-items-center small">
                             <span class="text-muted">Prüfung:</span>
                             @include('bea::parts.badges', [
@@ -275,8 +322,7 @@
     {{-- Einlese-Modal: Eingang der Disk oder Upload. Es wird nur eingelesen (kein Dokument,
          kein Übernehmen); wurde etwas eingelesen, lädt die Liste beim Schließen neu. --}}
     <div class="modal fade" id="beaImportModal" tabindex="-1" x-data="{ ingested: false }"
-        x-on:bea-ingested.window="ingested = true"
-        x-init="$el.addEventListener('show.bs.modal', (e) => {
+        x-on:bea-ingested.window="ingested = true" x-init="$el.addEventListener('show.bs.modal', (e) => {
             const tab = e.relatedTarget?.dataset.beaTab;
             tab && bootstrap.Tab.getOrCreateInstance($el.querySelector('#beaImportTab-' + tab)).show();
         });

@@ -81,6 +81,32 @@ class AssignTypes
     }
 
     /**
+     * Kontext für die Anwendung aus „data“ eines Aufrufs (bea.pending,
+     * bea.select): die in bea.assign.context genannten Schlüssel, z. B.
+     * Register_ID → Akte.
+     *
+     * @param  array<string, mixed>  $data
+     * @return list<Model>
+     */
+    public function contextModels(array $data): array
+    {
+        $models = [];
+
+        foreach ((array) config('bea.assign.context', []) as $key => $target) {
+            $value = $data[$key] ?? null;
+            if (blank($value) || ! is_array($target)) {
+                continue;
+            }
+            $model = $this->findBy((string) ($target['type'] ?? ''), (string) ($target['column'] ?? ''), $value);
+            if ($model && ! collect($models)->contains(fn (Model $m) => $m->is($model))) {
+                $models[] = $model;
+            }
+        }
+
+        return $models;
+    }
+
+    /**
      * Modell aus model_type/model_id (z. B. Aufruf aus einer Akte heraus).
      */
     public function resolve(?string $modelType, int|string|null $id): ?Model

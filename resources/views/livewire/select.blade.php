@@ -4,174 +4,131 @@
         $selectable = $this->rows->filter->isSelectable();
     @endphp
 
+    <div class="frame-hide"><br></div>
+
     @if ($error)
         <div class="alert alert-danger py-2">{{ $error }}</div>
     @endif
 
-    <div class="card mb-3">
-        <div class="card-header d-flex flex-wrap gap-2 align-items-center">
-            <span class="fw-semibold">{{ $message->subject ?: '(ohne Betreff)' }}</span>
-            @if ($message->eeb_requested)
-                <span class="badge text-bg-danger" title="Elektronisches Empfangsbekenntnis angefordert">eEB</span>
-            @endif
-            <span class="ms-auto text-nowrap">@include('bea::parts.badges', ['item' => $message])</span>
-        </div>
-        <div class="card-body small">
-            <div class="row g-2">
-                <div class="col-md-6"><span class="text-muted">Absender:</span> {{ $message->sender_name ?? '–' }}</div>
-                <div class="col-md-6"><span class="text-muted">{{ $message->datedLabel() }}:</span> {{ $message->dated_at?->timezone(config('app.timezone'))->format('d.m.Y H:i') ?? '–' }}@if ($message->isOutgoing()) <span class="badge text-bg-info">gesendet</span>@endif</div>
-                <div class="col-md-6"><span class="text-muted">Unser Aktenzeichen:</span> {{ $message->aktenzeichen ?? '–' }}</div>
-                <div class="col-md-6"><span class="text-muted">Aktenzeichen {{ $message->isOutgoing() ? 'Empfänger' : 'Absender' }}:</span> {{ $message->aktenzeichen_absender ?? '–' }}</div>
-            </div>
-            @if ($message->integrity !== 'complete' || ! in_array($message->vhn_signature, ['valid', 'signature_ok'], true))
-                <div class="alert alert-warning py-2 mt-3 mb-0">
-                    Die Prüfung der Nachricht ist nicht ohne Beanstandung.
-                    <a href="{{ route('bea.show', ['message' => $message, 'tab' => 'pruefung']) }}">Prüfung ansehen</a>
-                </div>
-            @endif
-        </div>
-    </div>
+    <x-card>
+        <x-slot name="headerLeft">
+            <h5 class="card-title mb-0">
+                <i class="bi bi-check2-square"></i> {{ $message->subject ?: '(ohne Betreff)' }}
+                @if ($message->eeb_requested)
+                    <span class="badge text-bg-danger" title="Elektronisches Empfangsbekenntnis angefordert">eEB</span>
+                @endif
+                @if ($message->isOutgoing())
+                    <span class="badge text-bg-info">gesendet</span>
+                @endif
+            </h5>
+        </x-slot>
 
-    {{-- Zuordnung --}}
-    <div class="card mb-3">
-        <div class="card-header"><i class="bi bi-link-45deg"></i> Zuordnung</div>
-        <div class="card-body">
-            <div class="mb-2 small">
-                <span class="text-muted">Zugeordnet:</span>
-                @if ($assigned)
-                    <span class="badge text-bg-success d-inline-flex align-items-center gap-1 fs-6 fw-normal">
-                        {{ $assigned }}
-                        <button type="button" class="btn-close btn-close-white" style="font-size: .6rem"
-                            wire:click="removeAssignment" title="Zuordnung entfernen"></button>
+        <x-slot name="headerRight">
+            <span class="text-nowrap">@include('bea::parts.badges', ['item' => $message])</span>
+        </x-slot>
+
+        {{-- Kopfdaten --}}
+        <div class="row g-1 small mb-2">
+            <div class="col-md-6"><span class="text-muted">{{ $message->isOutgoing() ? 'Empfänger' : 'Absender' }}:</span>
+                {{ ($message->isOutgoing() ? $message->recipient_name : $message->sender_name) ?? '–' }}</div>
+            <div class="col-md-6"><span class="text-muted">{{ $message->datedLabel() }}:</span>
+                {{ $message->dated_at?->timezone(config('app.timezone'))->format('d.m.Y H:i') ?? '–' }}</div>
+            <div class="col-md-6"><span class="text-muted">Unser Aktenzeichen:</span> {{ $message->aktenzeichen ?? '–' }}</div>
+            <div class="col-md-6"><span class="text-muted">Aktenzeichen {{ $message->isOutgoing() ? 'Empfänger' : 'Absender' }}:</span>
+                {{ $message->aktenzeichen_absender ?? '–' }}</div>
+            <div class="col-12">
+                <span class="text-muted">Zuordnung:</span>
+                @if ($this->assignedLabel)
+                    <span class="badge text-bg-success d-inline-flex align-items-center gap-1 fw-normal">
+                        {{ $this->assignedLabel }}
+                        @if (! $modelId && $message->isAssigned())
+                            <button type="button" class="btn-close btn-close-white" style="font-size: .55rem"
+                                wire:click="removeAssignment" title="Zuordnung entfernen"></button>
+                        @endif
                     </span>
                 @else
-                    <span class="text-muted">noch nichts – die Anwendung legt beim Übernehmen das Ziel an (z. B. ein Dokument).</span>
+                    <span class="text-muted">neu – die Anwendung legt beim Übernehmen das Ziel an und ordnet es selbst zu (z. B. Akte und Name über das Aktenzeichen).</span>
                 @endif
             </div>
-            <div class="d-flex flex-wrap gap-2 mb-2">
-                @foreach ($pending as $index => $entry)
-                    <span class="badge text-bg-primary d-inline-flex align-items-center gap-1 fs-6 fw-normal">
-                        {{ $entry['label'] }}
-                        <button type="button" class="btn-close btn-close-white" style="font-size: .6rem"
-                            wire:click="removePending({{ $index }})" title="Vorschlag entfernen"></button>
-                    </span>
-                @endforeach
-            </div>
+        </div>
 
-            @if (empty($this->types))
-                <div class="text-muted small">
-                    Zum Zuordnen die Modelle der Anwendung (Akte, Namen …) in <code>config/bea.php</code> unter <code>assign.types</code> eintragen.
+        @if ($message->integrity !== 'complete' || ! in_array($message->vhn_signature, ['valid', 'signature_ok'], true))
+            <div class="alert alert-warning py-2 small">
+                Die Prüfung der Nachricht ist nicht ohne Beanstandung.
+                <a href="{{ route('bea.show', ['message' => $message, 'tab' => 'pruefung']) }}" target="_blank">Prüfung ansehen</a>
+            </div>
+        @endif
+
+        {{-- Dateien; Vorschau im Fullscreen-Modal (bea::parts.file-modal) --}}
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="small fw-semibold"><i class="bi bi-paperclip"></i> Dateien übernehmen</span>
+                <div class="btn-group btn-group-sm ms-auto">
+                    <button type="button" class="btn btn-outline-secondary" wire:click="selectSuggested">Vorschläge</button>
+                    <button type="button" class="btn btn-outline-secondary" wire:click="selectNone">keine</button>
                 </div>
-            @else
-                <div class="row g-2">
-                    @foreach ($this->types as $key => $type)
-                        <div class="col-md-6" wire:key="type-{{ $key }}">
-                            <label class="form-label small mb-1">{{ $type['label'] }} suchen</label>
-                            <input type="search" class="form-control form-control-sm" wire:model.live.debounce.300ms="search.{{ $key }}"
-                                placeholder="mindestens 2 Zeichen …">
-                            @if (! empty($this->matches[$key]))
-                                <div class="list-group mt-1">
-                                    @foreach ($this->matches[$key] as $match)
-                                        <button type="button" class="list-group-item list-group-item-action py-1 small"
-                                            wire:click="addAssignment(@js((string) $key), @js($match['id']))">
-                                            <i class="bi bi-plus-lg"></i> {{ $match['label'] }}
-                                        </button>
-                                    @endforeach
-                                </div>
+            </div>
+            <div class="list-group small">
+                @forelse ($this->rows as $row)
+                    <div wire:key="bea-select-file-{{ $row->id }}" @class([
+                        'list-group-item d-flex align-items-center gap-2 px-2',
+                        'text-muted' => $row->isAccepted(),
+                    ])>
+                        <div style="width: 1.25rem">
+                            @if ($row->isAccepted())
+                                <i class="bi bi-check-circle-fill text-success" title="bereits übernommen"></i>
+                            @elseif ($row->isExcluded())
+                                <i class="bi bi-dash-circle text-muted" title="wird nicht übernommen (bea.exclude_extensions)"></i>
+                            @else
+                                <input type="checkbox" class="form-check-input" value="{{ $row->id }}" wire:model.live="selected"
+                                    id="row-{{ $row->id }}">
                             @endif
                         </div>
-                    @endforeach
-                </div>
-                <div class="form-text">Die gewählten Einträge (blau) werden beim Übernehmen an die Anwendung übergeben, z. B. Akte und Name für das neue Dokument.</div>
-            @endif
-        </div>
-    </div>
-
-    {{-- Dateien --}}
-    <div class="card mb-3">
-        <div class="card-header d-flex flex-wrap gap-2 align-items-center">
-            <span><i class="bi bi-paperclip"></i> Dateien übernehmen</span>
-            <div class="btn-group btn-group-sm ms-auto">
-                <button type="button" class="btn btn-outline-secondary" wire:click="selectSuggested">Vorschläge</button>
-                <button type="button" class="btn btn-outline-secondary" wire:click="selectNone">keine</button>
-            </div>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0 align-middle">
-                <thead>
-                    <tr>
-                        <th style="width: 2rem"></th>
-                        <th>Datei</th>
-                        <th>Art</th>
-                        <th class="text-end">Größe</th>
-                        <th>Hinweise</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse ($this->rows as $row)
-                        <tr wire:key="row-{{ $row->id }}" @class(['table-light text-muted' => $row->isAccepted()])>
-                            <td>
-                                @if ($row->isAccepted())
-                                    <i class="bi bi-check-circle-fill text-success" title="bereits übernommen"></i>
-                                @elseif ($row->isExcluded())
-                                    <i class="bi bi-dash-circle text-muted" title="wird nicht übernommen (bea.exclude_extensions)"></i>
-                                @else
-                                    <input type="checkbox" class="form-check-input" value="{{ $row->id }}" wire:model="selected" id="row-{{ $row->id }}">
-                                @endif
-                            </td>
-                            <td class="small">
-                                <label for="row-{{ $row->id }}" class="mb-0">{{ $row->label() }}</label>
-                                @if ($row->display_name && $row->display_name !== $row->name)
-                                    <div class="text-muted">{{ $row->name }}</div>
-                                @endif
-                            </td>
-                            <td class="small text-nowrap">
+                        <label for="row-{{ $row->id }}" class="flex-grow-1 text-truncate mb-0" title="{{ $row->name }}">
+                            {{ $row->label() }}
+                            <div class="text-truncate opacity-75">
                                 {{ $row->categoryLabel() ?? '–' }}
                                 @if ($row->suggested)
                                     <i class="bi bi-lightbulb text-warning" title="zur Übernahme vorgeschlagen"></i>
                                 @endif
-                            </td>
-                            <td class="small text-end text-nowrap">{{ Number::fileSize((int) $row->size) }}</td>
-                            <td class="small">
+                                · {{ Number::fileSize((int) $row->size) }}
                                 @if ($row->signed)
-                                    <span class="badge text-bg-dark" title="Signatur {{ $row->signature_name }} bleibt in der ZIP. Die Datei wird im Original übernommen und gegen Bearbeitung gesperrt.">
-                                        <i class="bi bi-patch-check"></i> signiert
-                                    </span>
+                                    · <span title="Signatur {{ $row->signature_name }} bleibt in der ZIP. Die Datei wird im Original übernommen und gegen Bearbeitung gesperrt."><i class="bi bi-patch-check"></i> signiert</span>
                                 @endif
                                 @if ($row->vhn_covered === false)
-                                    <span class="badge text-bg-warning" title="Keine passende Prüfsumme im Herkunftsnachweis">nicht im VHN</span>
+                                    · <span class="text-warning" title="Keine passende Prüfsumme im Herkunftsnachweis">nicht im VHN</span>
                                 @endif
-                            </td>
-                        </tr>
-                    @empty
-                        <tr>
-                            <td colspan="5" class="text-center text-muted py-3">Die Nachricht enthält keine Anhänge.</td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </table>
+                            </div>
+                        </label>
+                        @include('bea::parts.file-link', ['message' => $message, 'row' => $row])
+                    </div>
+                @empty
+                    <div class="list-group-item text-center text-muted py-3">Die Nachricht enthält keine Anhänge.</div>
+                @endforelse
+            </div>
+            <div class="form-text">
+                Signaturdateien (.p7s) und technische Dateien (XJustiz, Herkunftsnachweis, Exportansicht) bleiben in der
+                Original-ZIP. Nicht gewählte Dateien lassen sich später nachholen.
+            </div>
         </div>
-        <div class="card-footer small text-muted">
-            Signaturdateien (.p7s) und technische Dateien (XJustiz, Herkunftsnachweis, Exportansicht) bleiben in der Original-ZIP
-            und stehen nicht zur Auswahl. Nicht gewählte Dateien lassen sich später nachholen.
-        </div>
-    </div>
 
-    <div class="card mb-3">
-        <div class="card-body">
-            <label class="form-label small mb-1" for="bea-subject">Betreff für die Übergabe an Dokumente</label>
-            <input type="text" class="form-control form-control-sm mb-3" id="bea-subject" wire:model="subject">
-
-            <div class="d-flex gap-2">
-                <button type="button" class="btn btn-primary" wire:click="accept" wire:loading.attr="disabled">
-                    <span wire:loading.remove wire:target="accept"><i class="bi bi-check2-square me-1"></i> Übernehmen</span>
+        <x-slot name="footer">
+            <div class="d-flex flex-wrap gap-2 align-items-center mt-3">
+                <input type="text" class="form-control form-control-sm flex-grow-1" style="min-width: 15rem"
+                    wire:model="subject" placeholder="Betreff für die Übergabe an Dokumente" title="Betreff für die Übergabe an Dokumente">
+                <a class="btn btn-sm btn-outline-secondary" href="{{ route('bea.show', $message) }}" data-frame-close>Abbrechen</a>
+                <button type="button" class="btn btn-sm btn-primary text-nowrap" wire:click="accept" wire:loading.attr="disabled"
+                    wire:target="accept">
+                    <span wire:loading.remove wire:target="accept"><i class="bi bi-check2-square me-1"></i> Übernehmen
+                        ({{ count($selected) }})</span>
                     <span wire:loading wire:target="accept"><span class="spinner-border spinner-border-sm"></span> Dateien werden geprüft und übergeben…</span>
                 </button>
-                <a class="btn btn-outline-secondary" href="{{ route('bea.show', $message) }}">Zur Nachricht</a>
             </div>
             @if ($selectable->isEmpty())
                 <div class="form-text">Alle Anhänge sind bereits übernommen – „Übernehmen“ übergibt nur noch die Auswahl.</div>
             @endif
-        </div>
-    </div>
+        </x-slot>
+    </x-card>
+
+    @include('bea::parts.file-modal')
 </div>

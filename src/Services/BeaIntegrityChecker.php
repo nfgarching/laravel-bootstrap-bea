@@ -37,14 +37,16 @@ class BeaIntegrityChecker
         }
 
         $work = sys_get_temp_dir().'/bea-check-'.bin2hex(random_bytes(6));
-        $local = null;
 
         try {
-            $local = $this->storage->localArchive($archive);
-            $found = (string) hash_file('sha256', $local);
+            $found = $this->storage->withLocalArchive($archive, function (string $local) use ($work) {
+                $found = (string) hash_file('sha256', $local);
+                $this->archive->extract($local, $work);
+
+                return $found;
+            });
             $archiveIntact = hash_equals($archive->sha256, $found);
 
-            $this->archive->extract($local, $work);
             $root = $work.($message->directory ? '/'.$message->directory : '');
 
             $files = [];
@@ -99,9 +101,6 @@ class BeaIntegrityChecker
                 'result' => ['error' => $e->getMessage()],
             ]);
         } finally {
-            if ($local) {
-                @unlink($local);
-            }
             Filesystem::deleteDirectory($work);
         }
     }

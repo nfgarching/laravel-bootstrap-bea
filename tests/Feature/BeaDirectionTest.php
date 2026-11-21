@@ -12,6 +12,7 @@ use Nfgarching\Bea\Livewire\Pending;
 use Nfgarching\Bea\Models\BeaMessage;
 use Nfgarching\Bea\Parser\BeaMessageParser;
 use Nfgarching\Bea\Services\BeaImporter;
+use Nfgarching\Core\Helpers\DateTime;
 use Nfgarching\Files\Events\NewFiles;
 use Nfgarching\Files\Jobs\ProcessFile;
 
@@ -80,11 +81,15 @@ test('Liste und Modal zeigen gesendete Nachrichten mit Versanddatum und sortiere
     $this->get(route('bea.index'))->assertOk()->assertSeeInOrder(['Klage eingereicht', 'Ladung zum Termin']);
     $this->get(route('bea.index', ['richtung' => 'out']))->assertOk()
         ->assertSee('Klage eingereicht')->assertDontSee('Ladung zum Termin')
-        ->assertSee('Empfänger (gesendet von', false)
-        ->assertSee(e($out->recipient_name), false);
+        // Gesendet: Icon „send“, in der Spalte „Absender / Empfänger“ der Empfänger
+        ->assertSee('bi-send', false)
+        ->assertSee(e($out->recipient_name), false)
+        ->assertDontSee(e($out->sender_name), false);
 
     Livewire::test(Pending::class)
         ->assertSeeInOrder(['Klage eingereicht', 'Ladung zum Termin'])
-        ->assertSee('gesendet')
-        ->assertSee($out->dated_at->timezone(config('app.timezone'))->format('d.m.Y H:i'));
+        // Gesendet: Icon „send“ im Listen-Button (statt Badge „gesendet“)
+        ->assertSee('bi-send', false)
+        // Kurzdatum wie in den Listen-Buttons (@btndate), volles Datum steht im title
+        ->assertSee(DateTime::btndate($out->dated_at->timezone(config('app.timezone'))->format('d.m.Y H:i')));
 });

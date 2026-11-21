@@ -37,7 +37,7 @@ test('die beA-Sidebar öffnet „Nicht übernommen“ im iframe-Modal in xl', fu
 
     $html = view('bea::parts.sidebar')->render();
 
-    preg_match('/<button class="btn btn-link nav-link p-0".*?onclick="(.*?)"/s', $html, $treffer);
+    preg_match('/<button class="btn btn-link nav-link".*?onclick="(.*?)"/s', $html, $treffer);
     $onclick = html_entity_decode($treffer[1] ?? '', ENT_QUOTES);
     $url = route('bea.pending');
 

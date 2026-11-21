@@ -321,7 +321,7 @@ class BeaImporter
      *
      * @param  list<int>  $messageFileIds  BeaFile::$id aus data.files (nur übernehmbare Anlagen zählen)
      * @param  list<Model>  $context  Akte, Namen … für die Anwendung (Event BeaFilesAccepted), werden nicht gespeichert
-     * @return array{files: list<File>, failed: list<string>}
+     * @return array{files: list<File>, failed: list<string>, route: ?string} route: Anzeige des Modells aus dem Listener (BeaFilesAccepted::$route)
      */
     public function accept(BeaMessage $message, array $messageFileIds, array $context = [], ?string $subject = null, ?Model $target = null): array
     {
@@ -345,13 +345,13 @@ class BeaImporter
             }
 
             $work = $this->makeWorkspace();
-            $local = null;
             try {
-                $local = $this->storage->localArchive($archive);
-                if (! hash_equals($archive->sha256, (string) hash_file('sha256', $local))) {
-                    throw new InvalidBeaArchive('Die Original-ZIP wurde seit dem Einlesen verändert – Übernahme abgebrochen.');
-                }
-                $this->archive->extract($local, $work.'/x');
+                $this->storage->withLocalArchive($archive, function (string $local) use ($archive, $work) {
+                    if (! hash_equals($archive->sha256, (string) hash_file('sha256', $local))) {
+                        throw new InvalidBeaArchive('Die Original-ZIP wurde seit dem Einlesen verändert – Übernahme abgebrochen.');
+                    }
+                    $this->archive->extract($local, $work.'/x');
+                });
 
                 // Erst alles prüfen, dann übergeben
                 foreach ($rows as $row) {
@@ -371,9 +371,6 @@ class BeaImporter
                     $files[] = $file;
                 }
             } finally {
-                if ($local) {
-                    @unlink($local);
-                }
                 $this->removeWorkspace($work);
                 $message->forgetMessageFiles();
             }
@@ -401,11 +398,13 @@ class BeaImporter
 
         $fileIds = array_map(fn (File $file) => $file->id, $files);
 
-        BeaFilesAccepted::dispatch($message, $fileIds, $contextPairs, $subject ?: $message->subject);
+        // Instanz behalten: der Listener setzt $event->route (Anzeige des Dokuments)
+        $event = new BeaFilesAccepted($message, $fileIds, $contextPairs, $subject ?: $message->subject);
+        event($event);
 
         Log::info('beA-Nachricht '.($message->bea_id ?? '#'.$message->id).': '.count($fileIds).' Datei(en) übernommen');
 
-        return ['files' => $files, 'failed' => $failed];
+        return ['files' => $files, 'failed' => $failed, 'route' => $event->route];
     }
 
     /**

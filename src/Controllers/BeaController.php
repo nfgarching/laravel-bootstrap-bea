@@ -99,6 +99,8 @@ class BeaController
             'assignment' => $message->model_type && $message->model_id ? $types->label($message->model_type, $message->model_id) : null,
             'archiveExists' => $message->archive ? $storage->exists($message->archive) : false,
             'tab' => $request->string('tab', 'nachricht')->toString(),
+            // ?popup=1 (Modal/SHIFT aus der Liste): Popup-Layout statt App-Layout
+            'popup' => $request->boolean('popup'),
         ]);
     }
 
@@ -166,24 +168,24 @@ class BeaController
     }
 
     /**
-     * Eine Anlage direkt aus der Original-ZIP anzeigen (Vorschau vor dem
-     * Übernehmen). Ausgeliefert wird nur, was noch der beim Einlesen
-     * erfassten Prüfsumme entspricht.
+     * Eine Datei der Nachricht direkt aus der Original-ZIP anzeigen: Anlagen
+     * (Vorschau vor dem Übernehmen) wie auch technische Dateien und
+     * Signaturen, die in der ZIP bleiben. Ausgeliefert wird nur, was noch der
+     * beim Einlesen erfassten Prüfsumme entspricht.
      */
     public function file(BeaMessage $message, int $messageFile, BeaStorage $storage, ZipReader $zip): Response
     {
         $messageFile = $message->messageFile($messageFile);
-        abort_unless($messageFile instanceof BeaFile && $messageFile->isAttachment(), 404);
+        abort_unless($messageFile instanceof BeaFile, 404);
 
         $archive = $message->archive;
         abort_unless($archive && $storage->exists($archive), 404, 'Original-ZIP nicht gefunden.');
 
-        $local = $storage->localArchive($archive);
-        try {
-            $content = $zip->read($local, (string) $messageFile->zip_path);
-        } finally {
-            @unlink($local);
-        }
+        // Lokale Disk: direkt aus der ZIP lesen, sonst über eine Temp-Kopie
+        $content = $storage->withLocalArchive(
+            $archive,
+            fn (string $local) => $zip->read($local, (string) $messageFile->zip_path),
+        );
 
         abort_if($content === null, 404, 'Datei nicht in der Original-ZIP.');
         abort_if(
@@ -196,12 +198,21 @@ class BeaController
         $mime = MimeTypes::getDefault()->getMimeTypes($extension)[0] ?? 'application/octet-stream';
         $name = str_replace('"', '', (string) $messageFile->name);
 
-        return response($content, 200, [
+        $headers = [
             'Content-Type' => $mime,
             'Content-Disposition' => 'inline; filename="'.$name.'"',
             'X-Content-Type-Options' => 'nosniff',
             'Cache-Control' => 'private, no-store',
-        ]);
+        ];
+
+        // HTML/XML/SVG stammen vom Absender und können Scripte enthalten: in der
+        // Sandbox (eigener Origin, keine Scripte, keine Formulare) und ohne
+        // Nachladen externer Inhalte (Tracking-Pixel)
+        if (in_array($extension, ['html', 'htm', 'xml', 'svg', 'xhtml'], true)) {
+            $headers['Content-Security-Policy'] = "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline' data:; font-src data:";
+        }
+
+        return response($content, 200, $headers);
     }
 
     public function import(Request $request): View
@@ -212,11 +223,6 @@ class BeaController
     public function upload(Request $request): View
     {
         return view('bea::pages.upload', $this->context($request));
-    }
-
-    public function select(BeaMessage $message): View
-    {
-        return view('bea::pages.select', ['message' => $message]);
     }
 
     /**

@@ -1,70 +1,63 @@
-{{-- Anlagen einer Nachricht mit Vorschau aus der Original-ZIP (bea.pending): $message --}}
-<div class="row g-2">
-    <div class="col-lg-4">
-        <div class="list-group list-group-flush small">
-            @forelse ($this->expandedFiles as $row)
-                @php
-                    $url = route('bea.file', ['message' => $message->id, 'messageFile' => $row->id]);
-                    $previewable = $this->isPreviewable($row);
-                @endphp
-                <div wire:key="bea-pending-file-{{ $row->id }}" @class([
-                    'list-group-item d-flex align-items-center gap-2 px-2',
-                    'active' => $previewFile === $row->id,
-                ])>
-                    <i class="bi bi-{{ $row->suggested ? 'check2-square' : 'square' }}"
-                        title="{{ $row->suggested ? 'wird übernommen (Vorschlag)' : 'nicht vorgeschlagen' }}"></i>
-                    <div class="flex-grow-1 text-truncate" title="{{ $row->name }}">
-                        {{ $row->label() }}
-                        <div class="text-truncate opacity-75">
-                            @if ($row->categoryLabel())
-                                {{ $row->categoryLabel() }}
-                            @endif
-                            @if ($row->signed)
-                                · <i class="bi bi-patch-check"></i> signiert
-                            @endif
-                            @if ($row->isAccepted())
-                                · übernommen
-                            @endif
-                        </div>
-                    </div>
-                    {{-- Klick => Vorschau im Modal, SHIFT => Popup, CTRL => Tab --}}
-                    <button type="button" @class([
-                        'btn btn-sm',
-                        'btn-light' => $previewFile === $row->id,
-                        'btn-outline-secondary' => $previewFile !== $row->id,
-                    ])
-                        title="{{ $previewable ? 'Vorschau (SHIFT: Popup, CTRL: Tab)' : 'Öffnen (keine Vorschau möglich)' }}"
-                        x-on:click="
-                            const url = @js($url);
-                            if ($event.ctrlKey || ! @js($previewable)) { window.open(url, '_blank'); }
-                            else if ($event.shiftKey) {
-                                window.openPopup ? openPopup(url, 'width=800,height=900') : window.open(url, 'beaPreview', 'width=800,height=900');
-                            }
-                            else { $wire.preview({{ $row->id }}); }
-                        ">
-                        <i class="bi bi-{{ $previewable ? 'eye' : 'box-arrow-up-right' }}"></i>
-                    </button>
-                </div>
-            @empty
-                <div class="text-muted">--- Keine Anlagen ---</div>
-            @endforelse
+{{-- Anlagen einer Nachricht (bea.pending): $message. Auswahl je Datei in $files[message-id]
+     (vorbelegt mit den Vorschlägen), Vorschau im Modal
+     (bea::parts.file-link + bea::parts.file-modal in bea::livewire.pending) --}}
+@php
+    $chosen = $files[$message->id] ?? [];
+@endphp
+<div class="d-flex align-items-center gap-2 mb-1 small">
+    <span class="fw-semibold"><i class="bi bi-paperclip"></i> Dateien übernehmen ({{ count($chosen) }})</span>
+    <div class="btn-group btn-group-sm ms-auto">
+        <button type="button" class="btn btn-outline-secondary" wire:click="selectSuggested({{ $message->id }})"
+            title="Nur die vorgeschlagenen Dateien">Vorschläge</button>
+        <button type="button" class="btn btn-outline-secondary" wire:click="selectAllFiles({{ $message->id }})"
+            title="Alle übernehmbaren Dateien">alle</button>
+        <button type="button" class="btn btn-outline-secondary" wire:click="selectNoFiles({{ $message->id }})"
+            title="Keine Datei – die Nachricht wird ohne Dateien übernommen">keine</button>
+    </div>
+</div>
+<div class="list-group list-group-flush small">
+    @forelse ($this->expandedFiles as $row)
+        @php $inputId = 'bea-pending-file-'.$message->id.'-'.$row->id; @endphp
+        <div wire:key="bea-pending-file-{{ $row->id }}" @class([
+            'list-group-item d-flex align-items-center gap-2 px-2',
+            'text-muted' => ! $row->isSelectable(),
+        ])>
+            <div style="width: 1.25rem">
+                @if ($row->isAccepted())
+                    <i class="bi bi-check-circle-fill text-success" title="bereits übernommen"></i>
+                @elseif ($row->isExcluded())
+                    <i class="bi bi-dash-circle" title="wird nicht übernommen (bea.exclude_extensions)"></i>
+                @else
+                    <input type="checkbox" class="form-check-input" id="{{ $inputId }}" value="{{ $row->id }}"
+                        wire:model.live="files.{{ $message->id }}">
+                @endif
+            </div>
+            @include('bea::parts.file-link', ['message' => $message, 'row' => $row])
+            <label for="{{ $inputId }}" class="flex-grow-1 text-truncate mb-0" title="{{ $row->name }}">
+                {{ $row->label() }}
+                <span class="text-muted">
+                    @if ($row->categoryLabel())
+                        · {{ $row->categoryLabel() }}
+                    @endif
+                    @if ($row->suggested)
+                        <i class="bi bi-lightbulb text-warning" title="zur Übernahme vorgeschlagen"></i>
+                    @endif
+                    @if ($row->size)
+                        · {{ Number::fileSize((int) $row->size) }}
+                    @endif
+                    @if ($row->signed)
+                        · <span title="Signatur {{ $row->signature_name }} bleibt in der ZIP"><i class="bi bi-patch-check"></i> signiert</span>
+                    @endif
+                    @if ($row->vhn_covered === false)
+                        · <span class="text-warning" title="Keine passende Prüfsumme im Herkunftsnachweis">nicht im VHN</span>
+                    @endif
+                    @if ($row->isAccepted())
+                        · übernommen
+                    @endif
+                </span>
+            </label>
         </div>
-    </div>
-
-    <div class="col-lg-8">
-        @if ($previewFile)
-            <div class="d-flex justify-content-end mb-1">
-                <button type="button" class="btn btn-sm btn-outline-secondary" wire:click="closePreview"
-                    title="Vorschau schließen"><i class="bi bi-x-lg"></i></button>
-            </div>
-            <iframe wire:key="bea-preview-{{ $previewFile }}"
-                src="{{ route('bea.file', ['message' => $message->id, 'messageFile' => $previewFile]) }}"
-                class="w-100 border rounded" style="min-height: 65vh" title="Vorschau"></iframe>
-        @else
-            <div class="text-muted small p-3 border rounded text-center">
-                <i class="bi bi-file-earmark-pdf fs-3 d-block mb-1"></i>
-                Datei links wählen – SHIFT öffnet sie als Popup.
-            </div>
-        @endif
-    </div>
+    @empty
+        <div class="text-muted">--- Keine Anlagen ---</div>
+    @endforelse
 </div>

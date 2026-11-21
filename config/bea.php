@@ -3,6 +3,12 @@
 return [
 
     /*
+    | Icon des Packages (Bootstrap-Icons-Klassen): Navbar-Button und der
+    | Create-Button „bea-import“ der Anwendung.
+    */
+    'icon' => env('BEA_ICON', 'bi bi-bootstrap'),
+
+    /*
     |--------------------------------------------------------------------------
     | Disk „beas“
     |--------------------------------------------------------------------------

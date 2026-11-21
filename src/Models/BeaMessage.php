@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Collection as BaseCollection;
 use Nfgarching\Bea\Data\BeaFile;
 use Nfgarching\Bea\Data\BeaZip;
+use Nfgarching\Core\Helpers\DateTime;
 use Nfgarching\Files\Models\File;
 
 /**
@@ -241,6 +242,39 @@ class BeaMessage extends Model
     public function isAccepted(): bool
     {
         return $this->status === self::STATUS_ACCEPTED;
+    }
+
+    /**
+     * Kurzdatum (dated_at) für den Listen-Button, wie Dokument::get_btn_date().
+     */
+    public function get_btn_date(): string
+    {
+        return DateTime::btndate($this->dated_at);
+    }
+
+    /**
+     * Bootstrap-Icon (ohne „bi-“) für den Listen-Button: Richtung und Übernahme.
+     */
+    public function get_btn_icon(): string
+    {
+        return match (true) {
+            $this->isOutgoing() => 'send',
+            $this->isAccepted() => 'envelope-check',
+            default => 'envelope',
+        };
+    }
+
+    /**
+     * Button-Farbe für die Liste: übernommen = success, zugeordnet = primary,
+     * sonst outline-primary (wie Dokument: outline = noch ohne Zuordnung).
+     */
+    public function get_btn_type(): string
+    {
+        return match (true) {
+            $this->isAccepted() => 'success',
+            $this->isAssigned() => 'primary',
+            default => 'outline-primary',
+        };
     }
 
     public function isVhnTrusted(): bool

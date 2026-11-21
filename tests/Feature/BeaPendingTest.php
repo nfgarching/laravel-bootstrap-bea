@@ -11,6 +11,7 @@ use Nfgarching\Bea\Events\BeaMessageImported;
 use Nfgarching\Bea\Livewire\Pending;
 use Nfgarching\Bea\Models\BeaMessage;
 use Nfgarching\Bea\Services\BeaImporter;
+use Nfgarching\Bea\Services\BeaIntegrityChecker;
 use Nfgarching\Files\Events\NewFiles;
 use Nfgarching\Files\Jobs\ProcessFile;
 use Nfgarching\Files\Models\File;
@@ -108,10 +109,54 @@ test('eine Anlage wird zur Vorschau direkt aus der Original-ZIP ausgeliefert', f
         ->and(str_contains($response->headers->get('Content-Disposition'), 'inline'))->toBeTrue();
 });
 
-test('die Vorschau liefert nur Anlagen der eigenen Nachricht', function () {
-    $meta = $this->message->messageFiles()->firstWhere('role', 'meta');
-    $this->get(route('bea.file', ['message' => $this->message->id, 'messageFile' => $meta->id]))->assertNotFound();
+test('Vorschau, Prüfung und Übernahme lesen die ZIP der lokalen Disk direkt und lassen sie unverändert', function () {
+    $archive = $this->message->archive;
+    $sha = hash('sha256', Storage::disk('beas')->get($archive->path));
+    $row = $this->message->messageFiles()->where('role', 'attachment')->firstWhere('suggested', true);
 
+    $this->get(route('bea.file', ['message' => $this->message->id, 'messageFile' => $row->id]))->assertOk();
+    app(BeaIntegrityChecker::class)->check($this->message->fresh());
+    app(BeaImporter::class)->accept($this->message->fresh(), [$row->id]);
+
+    Storage::disk('beas')->assertExists($archive->path);
+    expect(hash('sha256', Storage::disk('beas')->get($archive->path)))->toBe($sha)
+        ->and($this->message->fresh()->verifications()->first()->archive_intact)->toBeTrue();
+});
+
+test('eine HTML-Anlage wird in der Sandbox angezeigt', function () {
+    $this->message->delete();
+    $message = app(BeaImporter::class)->ingest(beaFixtureZip([
+        'Anlage.html' => '<html><body><script>alert(1)</script><p>Hallo</p></body></html>',
+    ]))['imported'][0];
+    $row = $message->messageFiles()->firstWhere('name', 'Anlage.html');
+
+    expect($row->isAttachment())->toBeTrue()
+        ->and($row->isPreviewable())->toBeTrue();
+
+    $response = $this->get(route('bea.file', ['message' => $message->id, 'messageFile' => $row->id]))
+        ->assertOk()
+        ->assertSee('Hallo');
+
+    expect($response->headers->get('Content-Type'))->toStartWith('text/html')
+        ->and($response->headers->get('Content-Security-Policy'))->toStartWith('sandbox;');
+});
+
+test('auch Dateien, die in der ZIP bleiben, lassen sich ansehen', function () {
+    $export = $this->message->messageFiles()->first(fn ($row) => str_ends_with($row->name, '_export.html'));
+    expect($export->isAttachment())->toBeFalse()
+        ->and($export->isPreviewable())->toBeTrue();
+
+    $response = $this->get(route('bea.file', ['message' => $this->message->id, 'messageFile' => $export->id]))->assertOk();
+    expect(hash('sha256', $response->getContent()))->toBe($export->sha256)
+        ->and($response->headers->get('Content-Security-Policy'))->toStartWith('sandbox;');
+
+    $signature = $this->message->messageFiles()->firstWhere('role', 'signature');
+    $this->get(route('bea.file', ['message' => $this->message->id, 'messageFile' => $signature->id]))
+        ->assertOk()
+        ->assertHeaderMissing('Content-Security-Policy');
+});
+
+test('die Vorschau liefert nur Dateien der eigenen Nachricht', function () {
     $other = $this->message->replicate()->fill(['bea_id' => '100000002', 'data' => ['files' => []]]);
     $other->save();
     $row = $this->message->messageFiles()->firstWhere('role', 'attachment');
@@ -125,22 +170,45 @@ test('eine veränderte Anlage wird nicht angezeigt', function () {
     $this->get(route('bea.file', ['message' => $this->message->id, 'messageFile' => $row->id]))->assertStatus(409);
 });
 
-test('Aufklappen, Vorschau wählen und schließen', function () {
-    $attachments = $this->message->messageFiles()->where('role', 'attachment');
-    $other = $attachments->firstWhere('suggested', false) ?? $attachments->last();
+test('Aufklappen zeigt die Anlagen mit Vorschau-Knopf fürs Modal', function () {
+    $row = $this->message->messageFiles()->firstWhere('role', 'attachment');
 
-    $component = Livewire::test(Pending::class)
+    Livewire::test(Pending::class)
+        ->assertSee('id="beaFileModal"', false)
+        ->assertDontSee(route('bea.file', ['message' => $this->message->id, 'messageFile' => $row->id]), false)
         ->call('toggle', $this->message->id)
         ->assertSet('expanded', $this->message->id)
-        ->assertSee('Ladung zum Termin');
-
-    expect($component->get('previewFile'))->not->toBeNull();
-    $component->assertSee(route('bea.file', ['message' => $this->message->id, 'messageFile' => $component->get('previewFile')]), false);
-
-    $component->call('preview', $other->id)
-        ->assertSet('previewFile', $other->id)
-        ->call('preview', 999999)
-        ->assertSet('previewFile', null)
+        ->assertSee('Ladung zum Termin')
+        ->assertSee('data-url="'.route('bea.file', ['message' => $this->message->id, 'messageFile' => $row->id]).'"', false)
+        ->assertSee('beaFilePreview(event, this)', false)
         ->call('toggle', $this->message->id)
         ->assertSet('expanded', null);
+});
+
+test('Aufklappen belegt die Dateiauswahl mit den Vorschlägen vor', function () {
+    $suggested = $this->message->suggestedFiles()->map(fn ($row) => (string) $row->id)->values()->all();
+
+    Livewire::test(Pending::class)
+        ->call('toggle', $this->message->id)
+        ->assertSet('files.'.$this->message->id, $suggested)
+        ->assertSee('wire:model.live="files.'.$this->message->id.'"', false)
+        ->call('selectNoFiles', $this->message->id)
+        ->assertSet('files.'.$this->message->id, [])
+        ->call('selectSuggested', $this->message->id)
+        ->assertSet('files.'.$this->message->id, $suggested);
+});
+
+test('einzeln gewählte Dateien werden übernommen und wählen die Nachricht mit aus', function () {
+    $row = $this->message->attachmentFiles()->first(fn ($row) => $row->isSelectable());
+
+    Livewire::test(Pending::class)
+        ->call('toggle', $this->message->id)
+        ->set('files.'.$this->message->id, [(string) $row->id])
+        ->assertSet('selectedMessages', [(string) $this->message->id])
+        ->call('importMessages')
+        ->assertSet('error', null)
+        ->assertSet('files', []);
+
+    expect(File::count())->toBe(1)
+        ->and($this->message->fresh()->status)->toBe(BeaMessage::STATUS_ACCEPTED);
 });

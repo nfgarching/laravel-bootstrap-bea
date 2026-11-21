@@ -138,7 +138,10 @@ Nachrichten. Markierte Nachrichten werden in einem Schritt mit ihren
   Dokument) wird die Zuordnung der Nachricht, sofern es in `bea.assign.types`
   steht; Schlüssel aus `data` gibt `bea.assign.context` als Kontext an das
   Event `BeaFilesAccepted` (`'Register_ID' => ['type' => 'akte', 'column' => 'ID']`).
-- Danach lädt `reloadOpener()` (Layout `layout::popup`) das Hauptfenster (Modal)
+- Bei genau einer Nachricht zeigt `finishPopup()` danach das Modell aus
+  `BeaFilesAccepted::$route` an (z. B. das neue Dokument; aus einem Modell
+  heraus im aufrufenden Fenster, sonst in einem neuen Fenster). Bei mehreren
+  lädt `reloadOpener()` (Layout `layout::popup`) das Hauptfenster (Modal)
   bzw. das aufrufende Fenster (Popup) neu; ohne Opener geht es auf `/bea`.
 - **Vorschau:** Der Pfeil vor einer Nachricht klappt ihre Anlagen auf und
   zeigt gleich die erste vorgeschlagene PDF im Modal (Klick: Vorschau,
@@ -146,7 +149,23 @@ Nachrichten. Markierte Nachrichten werden in einem Schritt mit ihren
   `bea.file` (`/bea/{message}/file/{n}`, `n` = `BeaFile::$id`), nur Anlagen, nur wenn
   die SHA-256 noch zum Einlesen passt (sonst 409).
 
-Auswahl und Vorschlag in `bea.select` brauchen die Modelle der Anwendung in `config/bea.php`:
+### Einzelne Nachricht übernehmen (`bea.select`)
+
+`/bea/{message}/select` ist eine Popup-Seite (`layout::popup`) wie `bea.pending`:
+Detailseite, Liste, `bea.listing` und das Ergebnis des Einlesens öffnen sie mit
+`<x-button.dispatch frame frameSize="fullscreen">` im iframe-Modal (Klick: Modal,
+SHIFT: Popup, CTRL: Tab). Die Anlagen sind mit den Vorschlägen vorbelegt; der
+Knopf je Anlage (`bea::parts.file-link`, wie `x-storage.link` aus files) zeigt
+sie aus der Original-ZIP über `bea.file` in einem gemeinsamen Fullscreen-Modal
+(`bea::parts.file-modal`, lädt die Datei erst beim Öffnen; SHIFT: Popup,
+CTRL: Tab). Modelle der Anwendung (Akte, Namen …) werden dort **nicht**
+ausgewählt; Query wie bei `bea.pending`: `model_type`/`model_id` als Ziel,
+`data` (Schlüssel aus `bea.assign.context`) als Kontext. Nach dem Übernehmen
+zeigt `finishPopup()` das Modell aus `BeaFilesAccepted::$route` an (wie
+`files.import`: aus einem Modell heraus im aufrufenden Fenster, sonst in einem
+neuen Fenster); ohne Route lädt `reloadOpener()` Hauptfenster bzw. Opener neu.
+
+Anzeige und Auflösen der Zuordnung brauchen die Modelle der Anwendung in `config/bea.php`:
 
 ```php
 'assign' => [
@@ -178,8 +197,9 @@ Beweis) und werden nicht umgehängt; das zugeordnete Modell erreicht sie über
 `bea_messages.model` (z. B. als zusätzlicher Besitzer in `files.listing`).
 Ein `NewFiles`-Event löst die Übernahme nicht aus.
 
-Die in `bea.select` gewählten Modelle (Akte, Name …) werden nicht gespeichert:
-sie gehen als `context` mit dem Event `BeaFilesAccepted` an die Anwendung.
+Kontext-Modelle aus dem Aufruf (Akte, Name …) werden nicht gespeichert:
+sie gehen als `context` mit dem Event `BeaFilesAccepted` an die Anwendung,
+die fehlende Zuordnungen (z. B. Akte über das Aktenzeichen) selbst ermittelt.
 
 ## Empfangene und gesendete Nachrichten
 
@@ -223,7 +243,7 @@ geben das Modell mit: die eingelesene Nachricht wird ihm zugeordnet.
 | Event | Wann | Inhalt |
 |---|---|---|
 | `BeaMessageImported` | nach dem Einlesen | `message`, `aktenzeichen`, `aktenzeichenAbsender`, `data` – noch **keine** Dateien |
-| `BeaFilesAccepted` | bei jeder Übernahme | `message` (mit `model`), `fileIds`, `context` (gewählte Akte, Namen … als `[type, id]`), `subject` |
+| `BeaFilesAccepted` | bei jeder Übernahme | `message` (mit `model`), `fileIds`, `context` (Akte, Namen … aus dem Aufruf als `[type, id]`), `subject`; der Listener setzt `route` (Anzeige des angelegten Modells, wie `NewFiles`) – `bea.select` öffnet sie per `finishPopup()` |
 
 Übernahme im eigenen Listener, z. B. als Dokument:
 
@@ -245,8 +265,8 @@ class AcceptBeaMessage
 }
 ```
 
-Mit `'match'` in den Zuordnungstypen (siehe oben) schlägt `bea.select` die
-Akte anhand des Aktenzeichens vor.
+Mit `'match'` in den Zuordnungstypen (siehe oben) liefert
+`AssignTypes::suggestionsFor()` die Akte anhand des Aktenzeichens.
 
 ### Models
 
