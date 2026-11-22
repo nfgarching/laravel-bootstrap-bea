@@ -140,6 +140,9 @@ return [
         // Aufrufs, die als Kontext mitgegeben werden, z. B.
         //   'Register_ID' => ['type' => 'akte', 'column' => 'ID'],
         'context' => [],
+        // Typ (Schlüssel aus „types“), den der Listener auf BeaFilesAccepted ohne
+        // Ziel neu anlegt – nur für die Anzeige „neu: …“ in bea.select; null = keine.
+        'new' => null,
     ],
 
     /*

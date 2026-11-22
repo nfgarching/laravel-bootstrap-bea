@@ -99,10 +99,28 @@ class Select extends Component
         return $message->isAssigned() ? $types->label($message->model_type, $message->model_id) : null;
     }
 
+    /**
+     * Kopfanzeige „Typ #ID“: Ziel aus dem Aufruf, sonst die bestehende
+     * Zuordnung der Nachricht, sonst „neu: …“ (bea.assign.new).
+     */
+    #[Computed]
+    public function contextLabel(): ?string
+    {
+        $types = app(AssignTypes::class);
+        if ($this->modelId && $types->resolve($this->modelType, $this->modelId)) {
+            return $types->idLabel($this->modelType, $this->modelId);
+        }
+
+        $message = $this->message;
+
+        return ($message->isAssigned() ? $types->idLabel($message->model_type, $message->model_id) : null)
+            ?? $types->newLabel();
+    }
+
     public function removeAssignment(): void
     {
         $this->message->unassign();
-        unset($this->message, $this->assignedLabel);
+        unset($this->message, $this->assignedLabel, $this->contextLabel);
     }
 
     public function selectSuggested(): void

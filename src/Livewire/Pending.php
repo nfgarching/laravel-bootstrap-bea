@@ -117,12 +117,18 @@ class Pending extends Component
     }
 
     /**
-     * Anzeige des Aufrufkontexts, z. B. „Dokument: Ladung …“.
+     * Kopfanzeige „Typ #ID“ für das Ziel aus dem Aufruf, sonst „neu: …“
+     * (bea.assign.new) – wie bea.select.
      */
     #[Computed]
     public function contextLabel(): ?string
     {
-        return $this->modelId ? app(AssignTypes::class)->label($this->modelType, $this->modelId) : null;
+        $types = app(AssignTypes::class);
+        if ($this->modelId && $types->resolve($this->modelType, $this->modelId)) {
+            return $types->idLabel($this->modelType, $this->modelId);
+        }
+
+        return $types->newLabel();
     }
 
     /**

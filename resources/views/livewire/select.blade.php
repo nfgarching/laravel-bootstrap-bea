@@ -25,6 +25,7 @@
 
         <x-slot name="headerRight">
             <span class="text-nowrap">@include('bea::parts.badges', ['item' => $message])</span>
+            <small class="text-muted ms-2">{{ $this->contextLabel ?? 'ohne Zuordnung' }}</small>
         </x-slot>
 
         {{-- Kopfdaten --}}

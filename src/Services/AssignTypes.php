@@ -142,6 +142,28 @@ class AssignTypes
     }
 
     /**
+     * Kurzanzeige „Typ #ID“ (z. B. „Dokument #4711“), null für nicht
+     * konfigurierte Typen.
+     */
+    public function idLabel(?string $modelType, int|string|null $id): ?string
+    {
+        $key = $this->keyFor($modelType);
+
+        return $key !== null && $id ? $this->all()[$key]['label'].' #'.$id : null;
+    }
+
+    /**
+     * Anzeige „neu: Typ“ für den Typ aus bea.assign.new, den der Listener ohne
+     * Ziel anlegt; null, wenn keiner konfiguriert ist.
+     */
+    public function newLabel(): ?string
+    {
+        $type = $this->all()[(string) config('bea.assign.new')] ?? null;
+
+        return $type ? 'neu: '.$type['label'] : null;
+    }
+
+    /**
      * Anzeige einer gespeicherten Zuordnung, auch wenn der Typ nicht (mehr) konfiguriert ist.
      */
     public function label(string $modelType, int|string $id): string
