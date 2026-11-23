@@ -8,7 +8,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 ### Added
 
 - Import heruntergeladener beA-Nachrichten (ZIP, auch mehrere Nachrichten je ZIP) in zwei Schritten: **Einlesen** (`BeaImporter::ingest()`) erfasst und prüft nur; **Übernehmen** (`BeaImporter::accept()`) übergibt die von Hand gewählten Dateien an `nfgarching/files`.
-- Eigene, nicht öffentliche Disk `beas`: Eingang `inbox/`, Originale `archive/{Jahr}` (Spalten `archive_*` in `bea_messages` mit SHA-256; keine eigene Tabelle), `failed/`.
+- Ablage auf `BEA_DISK` (Standard `local`): Eingang `beas/inbox/`, Originale `{Jahr}/beas/{Jahr}-{Monat}` (Spalten `archive_*` in `bea_messages` mit SHA-256; keine eigene Tabelle), `beas/failed/`. Ordner der Originale wie der `PathGenerator` des Files-Packages (`BEA_PATH`, `BEA_DIR_YEAR`, `BEA_DIR_PREFIX`/`_SUFFIX`/`_POSTFIX`), Eingang und failed auf eigener Disk (`BEA_INBOX_DISK`, `BEA_FAILED_DISK`).
 - Einlesen per Eingang im Browser (`/bea/import`), Upload (`/bea/upload`) und Befehl `bea:import` (optional per Scheduler). Befehl und Scheduler übernehmen nie selbst.
 - Übernahme (`/bea/{id}/select`): Auswahl mit Vorschlägen (`BeaClassifier`, Regeln in `config/bea.php`: Verfügungen, Schriftsätze und Schreiben vorausgewählt, Anlagen nicht) und Auswahl von Akte und Namen (`bea.assign.types`, Vorschlag anhand des Aktenzeichens).
 - Signaturdateien (`.p7s`) und technische Dateien bleiben in der ZIP; signierte Dateien werden vermerkt, im Original übernommen und im Files-Package gesperrt. OCR-Text entsteht weiterhin.

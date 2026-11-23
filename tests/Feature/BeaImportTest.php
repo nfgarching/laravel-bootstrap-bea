@@ -23,7 +23,7 @@ require_once __DIR__.'/../fixture.php';
 beforeEach(function () {
     Storage::fake('local');
     Storage::fake('beas');
-    config(['files.save_disk' => 'local', 'bea.disk' => 'beas', 'bea.inbox.disk' => null, 'bea.inbox.path' => 'inbox', 'bea.archive.path' => 'archive', 'bea.failed.path' => 'failed']);
+    config(['files.save_disk' => 'local', 'bea.disk' => 'beas', 'bea.inbox.disk' => null, 'bea.inbox.path' => 'inbox', 'bea.archive.path' => 'archive', 'bea.archive.year' => true, 'bea.archive.prefix' => '', 'bea.archive.suffix' => '', 'bea.archive.postfix' => '', 'bea.failed.disk' => null, 'bea.failed.path' => 'failed']);
     // Verarbeitungskette des Files-Packages (OCR, PDF/A …) hier nicht ausführen
     Bus::fake([ProcessFile::class]);
     // Listener der Anwendung nicht ausführen (schrieben in die echte Legacy-Datenbank)
@@ -54,7 +54,7 @@ test('Einlesen legt die ZIP auf der Disk beas ab und erfasst alle Dateien, aber 
     $archive = $message->archive;
     expect($archive)->not->toBeNull()
         ->and($archive->sha256)->toBe(hash('sha256', Storage::disk('beas')->get($archive->path)))
-        ->and($archive->path)->toStartWith('archive/'.date('Y').'/');
+        ->and($archive->path)->toStartWith(date('Y').'/archive/'.date('Y-m').'/');
 
     $rows = $message->messageFiles()->keyBy('name');
     expect($rows)->toHaveCount(8) // 2 Anhänge, 1 Signatur, 5 technische Dateien
@@ -89,7 +89,7 @@ test('eine bereits eingelesene Nachricht wird übersprungen und die ZIP nicht do
         ->and($second['skipped'])->toBe(['100000001'])
         ->and($second['archive'])->toBeNull()
         ->and(BeaMessage::count())->toBe(1)
-        ->and(Storage::disk('beas')->allFiles('archive'))->toHaveCount(1);
+        ->and(Storage::disk('beas')->allFiles(date('Y').'/archive'))->toHaveCount(1);
     Event::assertDispatchedTimes(BeaMessageImported::class, 1);
 });
 
@@ -209,8 +209,53 @@ test('bea:import liest einen Eingang auf eigener Disk ein; Archiv und failed ble
         ->and(Storage::disk('beas')->exists(BeaMessage::first()->archive->path))->toBeTrue();
 });
 
+test('Ordner der Originale wie im PathGenerator, Jahresebene abschaltbar', function () {
+    $storage = app(BeaStorage::class);
+    $time = mktime(12, 0, 0, 11, 23, 2026);
+
+    config(['bea.archive.path' => 'beas']);
+    expect($storage->archiveDirectory($time))->toBe('2026/beas/2026-11');
+
+    config(['bea.archive.suffix' => 'akv']);
+    expect($storage->archiveDirectory($time))->toBe('2026/akv/beas/2026-11');
+
+    config(['bea.archive.prefix' => 'kanzlei', 'bea.archive.suffix' => '', 'bea.archive.postfix' => 'zip']);
+    expect($storage->archiveDirectory($time))->toBe('kanzlei/2026/beas/2026-11/zip');
+
+    config(['bea.archive.year' => false, 'bea.archive.prefix' => '', 'bea.archive.postfix' => '']);
+    expect($storage->archiveDirectory($time))->toBe('beas/2026-11');
+
+    config(['bea.archive.year' => 'false']);
+    expect($storage->archiveDirectory($time))->toBe('beas/2026-11');
+});
+
+test('Originale auf BEA_DISK, Eingang und failed auf eigener Disk', function () {
+    Storage::fake('data');
+    Storage::fake('scans');
+    config([
+        'bea.disk' => 'data',
+        'bea.archive.path' => 'beas',
+        'bea.archive.suffix' => 'akv',
+        'bea.inbox.disk' => 'scans',
+        'bea.inbox.path' => 'beA_Import',
+        'bea.failed.disk' => 'scans',
+        'bea.failed.path' => 'beA_Import/failed',
+    ]);
+    Storage::disk('scans')->put('beA_Import/nachricht.zip', file_get_contents(beaFixtureZip()));
+    Storage::disk('scans')->put('beA_Import/kaputt.zip', 'keine zip');
+
+    $this->artisan('bea:import')->assertFailed();
+
+    $archive = BeaMessage::sole()->archive;
+    expect($archive->disk)->toBe('data')
+        ->and($archive->path)->toStartWith(date('Y').'/akv/beas/'.date('Y-m').'/')
+        ->and(Storage::disk('data')->exists($archive->path))->toBeTrue()
+        ->and(Storage::disk('scans')->files('beA_Import/failed'))->toHaveCount(1)
+        ->and(Storage::disk('scans')->files('beA_Import'))->toBe([]);
+});
+
 test('Archiv und failed unterhalb des Eingangs werden nicht als Eingang behandelt', function () {
-    config(['bea.inbox.path' => 'eingang', 'bea.archive.path' => 'eingang/archive', 'bea.failed.path' => 'eingang/failed']);
+    config(['bea.inbox.path' => 'eingang', 'bea.archive.year' => false, 'bea.archive.path' => 'eingang/archive', 'bea.failed.path' => 'eingang/failed']);
     Storage::disk('beas')->put('eingang/nachricht.zip', file_get_contents(beaFixtureZip()));
 
     $this->artisan('bea:import')->assertSuccessful();

@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('bea_messages', function (Blueprint $table) {
             $table->id();
-            // Original-ZIP auf der Disk „beas“ (mehrere Nachrichten einer ZIP teilen sich die Datei)
+            // Original-ZIP auf der Disk BEA_DISK (mehrere Nachrichten einer ZIP teilen sich die Datei)
             $table->string('archive_disk', 64)->nullable();
             $table->string('archive_path', 1024)->nullable();
             $table->string('archive_name', 512)->nullable();     // Dateiname beim Einlesen

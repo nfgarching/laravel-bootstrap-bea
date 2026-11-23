@@ -73,13 +73,13 @@ class BeaServiceProvider extends ServiceProvider
     }
 
     /**
-     * Disk „beas“ anlegen, falls die Anwendung sie nicht selbst definiert.
+     * Disk BEA_DISK anlegen, falls die Anwendung sie nicht selbst definiert.
      * Bewusst ohne URL und ohne öffentlichen Link: beA-Nachrichten unterliegen
      * der anwaltlichen Verschwiegenheit.
      */
     private function registerDisk(): void
     {
-        $disk = (string) config('bea.disk', 'beas');
+        $disk = (string) config('bea.disk', 'local');
 
         if (config("filesystems.disks.{$disk}") === null) {
             config(["filesystems.disks.{$disk}" => [

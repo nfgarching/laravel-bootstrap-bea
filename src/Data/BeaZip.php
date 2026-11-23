@@ -3,7 +3,7 @@
 namespace Nfgarching\Bea\Data;
 
 /**
- * Original-ZIP einer beA-Nachricht auf der Disk „beas“ (Spalten archive_*
+ * Original-ZIP einer beA-Nachricht auf der Disk BEA_DISK (Spalten archive_*
  * in bea_messages). sha256 ist die Prüfsumme beim Einlesen; jede spätere
  * Prüfung vergleicht dagegen. Mehrere Nachrichten einer ZIP verweisen auf
  * dieselbe Datei.

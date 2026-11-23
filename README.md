@@ -15,14 +15,14 @@ OCR und PDF-Prüfung; das empfangene Original bleibt dabei unverändert.
 ## Ablauf
 
 Der Import läuft in zwei Schritten. Die ZIP ist dabei immer die Quelle – sie
-liegt unverändert auf der Disk `beas`.
+liegt unverändert bei den Originalen (siehe [Ablage](#ablage)).
 
 ```
 1. Einlesen (automatisch oder von Hand)
    ZIP ──► sicher entpacken ──► je Nachricht auslesen ──► schon bekannt? ──► überspringen
                                         │
                                         ▼
-      VHN prüfen (Prüfsummen + Signatur) ──► ZIP nach beas/archive/{Jahr}
+      VHN prüfen (Prüfsummen + Signatur) ──► ZIP zu den Originalen ({Jahr}/beas/{Jahr}-{Monat})
                                         │
                                         ▼
       alle Dateien mit SHA-256 und Vorschlag erfassen ──► Event BeaMessageImported
@@ -82,17 +82,62 @@ php artisan migrate
 php artisan vendor:publish --tag=bea-config   # für die Zuordnungstypen nötig
 ```
 
-## Disk `beas`
+## Ablage
 
-Das Package legt die Disk selbst an (lokal unter `storage/app/beas`), sofern
-`config/filesystems.php` keine Disk dieses Namens definiert. Sie hat bewusst
-keine URL und keinen öffentlichen Link.
+Die ZIPs liegen an drei Stellen, jede mit eigener Disk und eigenem Pfad:
 
-| Ordner | Inhalt |
+| Ablage | Disk | Pfad (Standard) | Inhalt |
+|---|---|---|---|
+| Eingang | `BEA_INBOX_DISK` (= `BEA_DISK`) | `beas/inbox/` | heruntergeladene ZIPs – wie `scans` im Files-Package |
+| Originale | `BEA_DISK` (`local`) | `{Jahr}/beas/{Jahr}-{Monat}/` | jede eingelesene ZIP unverändert (Beweisstück, mit SHA-256) |
+| failed | `BEA_FAILED_DISK` (= `BEA_DISK`) | `beas/failed/` | ZIPs, die sich nicht einlesen ließen |
+
+Standard-Disk ist `local` (`storage/app/private`). Fehlt die Disk `BEA_DISK`
+in `config/filesystems.php`, legt das Package sie selbst lokal an
+(`BEA_DISK_ROOT`, sonst `storage/app/beas`) – bewusst ohne URL und ohne
+öffentlichen Link. Eingang und failed müssen auf vorhandenen Disks liegen.
+
+### Ordner der Originale
+
+Aufgebaut wie im `PathGenerator` des Files-Packages (`FILE_DIR_PREFIX`/`_SUFFIX`/`_POSTFIX`):
+
+```text
+[{BEA_DIR_PREFIX}/][{Jahr}/][{BEA_DIR_SUFFIX}/]{BEA_PATH}/{Jahr}-{Monat}[/{BEA_DIR_POSTFIX}]
+```
+
+Jahr und Monat sind die des Einlesens. Die Jahresebene vor `BEA_PATH` gibt es
+immer; `BEA_DIR_YEAR=false` schaltet sie ab.
+
+| Einstellung | Ordner |
 |---|---|
-| `inbox/` | Eingang: heruntergeladene ZIPs – wie `scans` im Files-Package |
-| `archive/{Jahr}/` | jede eingelesene ZIP im Original (Spalten `archive_*` in `bea_messages`, mit SHA-256) |
-| `failed/` | ZIPs, die sich nicht einlesen ließen |
+| Standard | `local: 2026/beas/2026-11/` |
+| `BEA_DISK=data`, `BEA_DIR_SUFFIX=akv` | `data: 2026/akv/beas/2026-11/` |
+| `BEA_DIR_YEAR=false` | `local: beas/2026-11/` |
+
+Dateiname: die ersten 12 Zeichen der SHA-256 und der Originalname, z. B.
+`0934ce8c595a_Nachricht_656956044.zip`. Eine inhaltsgleiche ZIP wird nicht
+doppelt abgelegt.
+
+Disk und Pfad stehen je Nachricht in `bea_messages.archive_disk` und
+`archive_path`. Eine geänderte Einstellung gilt daher nur für neu eingelesene
+ZIPs; vorhandene Originale bleiben, wo sie sind, und werden dort gefunden.
+
+### Beispiel: Eingang auf einem Scan-Share
+
+```dotenv
+BEA_DISK=data
+BEA_PATH=beas
+BEA_DIR_SUFFIX=akv
+BEA_INBOX_DISK=scans
+BEA_INBOX_PATH=beA_Import
+BEA_FAILED_DISK=scans
+BEA_FAILED_PATH=beA_Import/failed
+```
+
+Originale unter `data: 2026/akv/beas/2026-11/`, Eingang und failed unter
+`scans: beA_Import/`. Liegt der Ordner der Originale unterhalb des Eingangs,
+wird er nicht als Eingang behandelt: Eingelesen werden nur ZIPs direkt im
+Eingangsordner.
 
 ## Einlesen
 
@@ -101,13 +146,13 @@ keine URL und keinen öffentlichen Link.
   `<livewire:bea.upload :modal="true" />`). Es wird nur eingelesen, das
   Ergebnis bietet kein „Übernehmen“ an; beim Schließen lädt die Liste neu,
   wenn etwas eingelesen wurde (Browser-Event `bea-ingested`).
-- **Eingang im Browser:** `/bea/import` – ZIPs aus `beas/inbox` auflisten,
+- **Eingang im Browser:** `/bea/import` – ZIPs aus dem Eingang (`BEA_INBOX_DISK`/`BEA_INBOX_PATH`) auflisten,
   markieren, einlesen oder löschen.
 - **Upload:** `/bea/upload`.
 - **Befehl / Scheduler:**
 
   ```bash
-  php artisan bea:import            # Eingang der Disk
+  php artisan bea:import            # alle ZIPs im Eingang
   php artisan bea:import a.zip b.zip
   php artisan bea:import --force    # bereits eingelesene erneut einlesen
   php artisan bea:import --keep     # ZIPs im Eingang belassen
@@ -319,10 +364,13 @@ bleibt dafür samt Signatur im Original erhalten.
 
 | Variable | Standard | Bedeutung |
 |---|---|---|
-| `BEA_DISK` / `BEA_DISK_ROOT` | `beas` / `storage/app/beas` | Disk für Eingang und Originale |
-| `BEA_INBOX_DISK` | – (= `BEA_DISK`) | eigene Disk für den Eingang, z. B. `scans`; Archiv und `failed/` bleiben auf `BEA_DISK` |
-| `BEA_INBOX_PATH` | `inbox` | Eingang auf der (Eingangs-)Disk |
-| `BEA_ARCHIVE_PATH` / `BEA_FAILED_PATH` | `archive` / `failed` | Originale bzw. nicht einlesbare ZIPs |
+| `BEA_DISK` | `local` | Disk der Originale; Vorgabe für Eingang und failed (siehe [Ablage](#ablage)) |
+| `BEA_DISK_ROOT` | `storage/app/beas` | Wurzel, nur wenn das Package die Disk `BEA_DISK` selbst anlegt |
+| `BEA_PATH` | `beas` | Ordner der Originale |
+| `BEA_DIR_YEAR` | `true` | Jahresebene vor `BEA_PATH`; `false` = ohne |
+| `BEA_DIR_PREFIX` / `BEA_DIR_SUFFIX` / `BEA_DIR_POSTFIX` | – | weitere Teile des Ordners der Originale |
+| `BEA_INBOX_DISK` / `BEA_INBOX_PATH` | – (= `BEA_DISK`) / `beas/inbox` | Eingang |
+| `BEA_FAILED_DISK` / `BEA_FAILED_PATH` | – (= `BEA_DISK`) / `beas/failed` | nicht einlesbare ZIPs |
 | `BEA_IMPORT_SCHEDULE` | – | Cron-Ausdruck für `bea:import` |
 | `BEA_FILES_COLLECTION` | `bea` | `collection_name` der übernommenen Dateien |
 | `BEA_VHN_VERIFY` | `true` | VHN-Signatur mit OpenSSL prüfen |

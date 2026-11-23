@@ -22,7 +22,7 @@ use Nfgarching\Files\Models\File;
  * Import in zwei Schritten:
  *
  * ingest()  Einlesen – ZIP sicher entpacken, jede Nachricht auslesen und
- *           prüfen, ZIP unverändert auf der Disk „beas“ ablegen, alle
+ *           prüfen, ZIP unverändert auf der Disk BEA_DISK ablegen, alle
  *           enthaltenen Dateien mit Prüfsumme und Vorschlag erfassen.
  *           Ins Files-Package gelangt dabei nichts.
  *

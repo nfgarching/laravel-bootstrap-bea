@@ -10,34 +10,52 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Disk „beas“
+    | Ablage der beA-Exporte (ZIP)
     |--------------------------------------------------------------------------
-    | Eigene, nicht öffentliche Disk für beA-Exporte (ZIP). Ist die Disk in
-    | config/filesystems.php nicht definiert, legt das Package sie lokal unter
-    | storage/app/beas (bzw. BEA_DISK_ROOT) an.
+    | BEA_DISK ist die Disk der Originale (jede eingelesene ZIP unverändert,
+    | Beweisstück) und die Vorgabe für Eingang und failed. Standard „local“
+    | (storage/app/private). Ist die Disk in config/filesystems.php nicht
+    | definiert, legt das Package sie lokal unter BEA_DISK_ROOT (sonst
+    | storage/app/beas) an.
     |
-    |   inbox/           Eingang: heruntergeladene ZIPs, wie „scans“ im Files-Package
-    |   archive/{Jahr}/  Originale: jede eingelesene ZIP unverändert (Beweisstück)
-    |   failed/          ZIPs, die sich nicht einlesen ließen
+    | Ordner der Originale wie der PathGenerator des Files-Packages:
+    |
+    |   [{Präfix}/][{Jahr}/][{Suffix}/]{BEA_PATH}/{Jahr}-{Monat}[/{Postfix}]
+    |
+    | Die Jahresebene vor BEA_PATH lässt sich mit BEA_DIR_YEAR=false
+    | abschalten. Beispiele:
+    |   Standard                          local: 2026/beas/2026-11
+    |   BEA_DISK=data, BEA_DIR_SUFFIX=akv data:  2026/akv/beas/2026-11
+    |   BEA_DIR_YEAR=false                local: beas/2026-11
+    |
+    | Gespeichert wird je Nachricht Disk und Pfad (archive_disk/archive_path):
+    | Eine geänderte Einstellung gilt nur für neu eingelesene ZIPs.
     */
 
-    'disk' => env('BEA_DISK', 'beas'),
+    'disk' => env('BEA_DISK', 'local'),
     'disk_root' => env('BEA_DISK_ROOT'),
 
+    'archive' => [
+        'path' => env('BEA_PATH', 'beas'),
+        // Jahresebene vor BEA_PATH ({Jahr}/…/beas/{Jahr}-{Monat})
+        'year' => env('BEA_DIR_YEAR', true),
+        'prefix' => env('BEA_DIR_PREFIX', ''),
+        'suffix' => env('BEA_DIR_SUFFIX', ''),
+        'postfix' => env('BEA_DIR_POSTFIX', ''),
+    ],
+
     'inbox' => [
-        // Eigene Disk für den Eingang (z. B. „scans“), leer = Disk „beas“
+        // Eingang: heruntergeladene ZIPs; eigene Disk z. B. „scans“, leer = BEA_DISK
         'disk' => env('BEA_INBOX_DISK'),
-        'path' => env('BEA_INBOX_PATH', 'inbox'),
+        'path' => env('BEA_INBOX_PATH', 'beas/inbox'),
         // Cron-Ausdruck für das automatische Einlesen, leer = aus
         'schedule' => env('BEA_IMPORT_SCHEDULE'),
     ],
 
-    'archive' => [
-        'path' => env('BEA_ARCHIVE_PATH', 'archive'),
-    ],
-
     'failed' => [
-        'path' => env('BEA_FAILED_PATH', 'failed'),
+        // ZIPs, die sich nicht einlesen ließen; leer = BEA_DISK
+        'disk' => env('BEA_FAILED_DISK'),
+        'path' => env('BEA_FAILED_PATH', 'beas/failed'),
     ],
 
     /*

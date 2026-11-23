@@ -13,7 +13,7 @@ Route::middleware(config('bea.routes.middleware', ['web', 'auth']))
         // Liste als Popup (ohne Navigation), z. B. aus einem Dokument heraus
         Route::get('/popup', [BeaController::class, 'popup'])->name('popup');
 
-        // Einlesen: aus dem Eingang der Disk „beas“ oder per Upload
+        // Einlesen: aus dem Eingang (BEA_INBOX_DISK) oder per Upload
         Route::get('/import', [BeaController::class, 'import'])->name('import');
         Route::get('/upload', [BeaController::class, 'upload'])->name('upload');
         // Nicht übernommene Nachrichten markieren und übernehmen (Popup; als Modal: bea::parts.modals)

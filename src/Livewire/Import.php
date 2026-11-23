@@ -9,7 +9,7 @@ use Nfgarching\Bea\Livewire\Concerns\IngestsArchives;
 use Nfgarching\Bea\Services\BeaStorage;
 
 /**
- * Einlesen aus dem Eingang der Disk „beas“ (wie der Scan-Eingang des
+ * Einlesen aus dem Eingang (BEA_INBOX_DISK) (wie der Scan-Eingang des
  * Files-Packages): ZIPs auflisten, auswählen, einlesen oder löschen.
  */
 class Import extends Component

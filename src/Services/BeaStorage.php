@@ -12,14 +12,15 @@ use Nfgarching\Bea\Exceptions\InvalidBeaArchive;
 use Nfgarching\Bea\Models\BeaMessage;
 
 /**
- * Disk „beas“: Eingang (inbox), Originale (archive/{Jahr}) und nicht
- * einlesbare ZIPs (failed).
+ * Ablage der beA-Exporte: Originale auf BEA_DISK (Ordner siehe
+ * archiveDirectory()), Eingang (inbox) und nicht einlesbare ZIPs (failed)
+ * auf eigener Disk oder ebenfalls auf BEA_DISK.
  */
 class BeaStorage
 {
     public function diskName(): string
     {
-        return (string) config('bea.disk', 'beas');
+        return (string) config('bea.disk', 'local');
     }
 
     public function disk(): Filesystem
@@ -28,7 +29,7 @@ class BeaStorage
     }
 
     /**
-     * Disk des Eingangs; ohne eigene Angabe die Disk „beas“.
+     * Disk des Eingangs; ohne eigene Angabe BEA_DISK.
      */
     public function inboxDiskName(): string
     {
@@ -47,12 +48,51 @@ class BeaStorage
 
     public function inboxPath(): string
     {
-        return trim((string) config('bea.inbox.path', 'inbox'), '/');
+        return trim((string) config('bea.inbox.path', 'beas/inbox'), '/');
+    }
+
+    /**
+     * Disk für nicht einlesbare ZIPs; ohne eigene Angabe BEA_DISK.
+     */
+    public function failedDiskName(): string
+    {
+        return (string) (config('bea.failed.disk') ?: $this->diskName());
+    }
+
+    public function failedDisk(): Filesystem
+    {
+        return Storage::disk($this->failedDiskName());
     }
 
     public function failedPath(): string
     {
-        return trim((string) config('bea.failed.path', 'failed'), '/');
+        return trim((string) config('bea.failed.path', 'beas/failed'), '/');
+    }
+
+    /**
+     * Ordner der Originale auf BEA_DISK, aufgebaut wie im PathGenerator des
+     * Files-Packages:
+     *
+     *   [{Präfix}/][{Jahr}/][{Suffix}/]{BEA_PATH}/{Jahr}-{Monat}[/{Postfix}]
+     *
+     * Die Jahresebene vor BEA_PATH lässt sich mit BEA_DIR_YEAR=false
+     * abschalten (Standard „2026/beas/2026-11“, mit Suffix „akv“
+     * „2026/akv/beas/2026-11“, ohne Jahresebene „beas/2026-11“).
+     */
+    public function archiveDirectory(?int $timestamp = null): string
+    {
+        $timestamp ??= time();
+        $part = fn (string $key, string $default = ''): string => trim((string) config("bea.archive.{$key}", $default), '/');
+        $year = filter_var(config('bea.archive.year', true), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? true;
+
+        return implode('/', array_filter([
+            $part('prefix'),
+            $year ? date('Y', $timestamp) : '',
+            $part('suffix'),
+            $part('path', 'beas'),
+            date('Y-m', $timestamp),
+            $part('postfix'),
+        ], fn (string $segment): bool => $segment !== ''));
     }
 
     /**
@@ -98,8 +138,7 @@ class BeaStorage
             return $known->archive;
         }
 
-        $path = trim((string) config('bea.archive.path', 'archive'), '/')
-            .'/'.date('Y').'/'.substr($sha256, 0, 12).'_'.$originalName;
+        $path = $this->archiveDirectory().'/'.substr($sha256, 0, 12).'_'.$originalName;
 
         $stream = fopen($localZip, 'rb');
         try {
@@ -198,15 +237,15 @@ class BeaStorage
     }
 
     /**
-     * Verschiebt eine nicht einlesbare ZIP aus dem Eingang nach failed/ der
-     * Disk „beas“ – auch wenn der Eingang auf einer anderen Disk liegt.
+     * Verschiebt eine nicht einlesbare ZIP aus dem Eingang nach failed/ –
+     * auch wenn Eingang und failed auf verschiedenen Disks liegen.
      */
     public function moveToFailed(string $inboxFile): void
     {
         $target = $this->failedPath().'/'.date('Ymd-His').'_'.basename($inboxFile);
 
-        if ($this->inboxDiskName() === $this->diskName()) {
-            $this->disk()->move($inboxFile, $target);
+        if ($this->inboxDiskName() === $this->failedDiskName()) {
+            $this->failedDisk()->move($inboxFile, $target);
 
             return;
         }
@@ -216,7 +255,7 @@ class BeaStorage
             throw new InvalidBeaArchive('Datei nicht lesbar: '.$this->inboxDiskName().'/'.$inboxFile);
         }
         try {
-            if (! $this->disk()->writeStream($target, $stream)) {
+            if (! $this->failedDisk()->writeStream($target, $stream)) {
                 throw new InvalidBeaArchive('ZIP-Datei ließ sich nicht nach „'.$this->failedPath().'“ verschieben.');
             }
         } finally {
