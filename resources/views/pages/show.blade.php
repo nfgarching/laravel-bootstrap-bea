@@ -172,8 +172,14 @@
         <div class="card">
             <div class="card-header d-flex flex-wrap gap-2 align-items-center">
                 <span>Alle Dateien der Nachricht in der ZIP</span>
+                @if ($message->archive)
+                    <code @class(['small text-break ms-auto', 'text-danger' => !$archiveExists])
+                        title="{{ $archiveExists ? 'Speicherort der Original-ZIP' : 'Original-ZIP fehlt an diesem Ort' }}">
+                        <i class="bi bi-folder2-open"></i> {{ $message->archive->disk }}:{{ $message->archive->path }}
+                    </code>
+                @endif
                 @if ($archiveExists)
-                    <a class="btn btn-sm btn-outline-secondary ms-auto" href="{{ route('bea.archive', $message) }}">
+                    <a @class(['btn btn-sm btn-outline-secondary', 'ms-auto' => !$message->archive]) href="{{ route('bea.archive', $message) }}">
                         <i class="bi bi-file-earmark-zip"></i> Original-ZIP
                     </a>
                 @endif
